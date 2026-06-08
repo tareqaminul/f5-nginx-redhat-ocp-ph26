@@ -3,7 +3,7 @@
 1. Clone this repository
 
 ```code
-git clone https://github.com/f5devcentral/NGINX-Gateway-Fabric-Lab.git
+git clone https://github.com/tareqaminul/f5-nginx-redhat-ocp-ph26.git
 ```
 
 2. Change directory
