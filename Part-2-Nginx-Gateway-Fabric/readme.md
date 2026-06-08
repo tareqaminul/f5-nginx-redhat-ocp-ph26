@@ -9,7 +9,7 @@ git clone https://github.com/tareqaminul/f5-nginx-redhat-ocp-ph26.git
 2. Change directory
 
 ```code
-cd NGINX-Gateway-Fabric-Lab/labs
+cd f5-nginx-redhat-ocp-ph26/Part-2-Nginx-Gateway-Fabric
 ```
 
 ## Running use cases
