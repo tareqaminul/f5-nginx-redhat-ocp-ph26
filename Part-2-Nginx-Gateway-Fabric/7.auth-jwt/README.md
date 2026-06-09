@@ -4,18 +4,18 @@ This use case shows how to enforce JWT authentication
 
 `cd` into the lab directory
 ```code
-cd ~/NGINX-Gateway-Fabric-Lab/labs/8.auth-jwt
+cd ~/Part-2-Nginx-Gateway-Fabric/8.auth-jwt
 ```
 
 Deploy the sample application
 ```code
-kubectl apply -f 0.coffee.yaml
+oc apply -f 0.coffee.yaml
 ```
 
 Verify that the pod is in the `Running` state
 
 ```code
-kubectl get all
+oc get all
 ```
 
 Output should be similar to
@@ -37,12 +37,12 @@ replicaset.apps/coffee-654ddf664b   1         1         1       9s
 
 Create the gateway object. This deploys the NGINX Gateway Fabric dataplane pod in the current namespace
 ```code
-kubectl apply -f 1.gateway.yaml
+oc apply -f 1.gateway.yaml
 ```
 
 Check the NGINX Gateway Fabric dataplane pod status
 ```code
-kubectl get pods
+oc get pods
 ```
 
 `gateway-nginx-6558bbcfdf-pd2lx` is the NGINX Gateway Fabric dataplane pod
@@ -54,7 +54,7 @@ gateway-nginx-6558bbcfdf-pd2lx   2/2     Running   0          20s
 
 Check the gateway
 ```code
-kubectl get gateway
+oc get gateway
 ```
 
 Output should be similar to
@@ -65,7 +65,7 @@ gateway   nginx   10.101.164.103   True         41s
 
 Check the NGINX Gateway Fabric Service
 ```code
-kubectl get service
+oc get service
 ```
 
 `gateway-nginx` is the NGINX Gateway Fabric dataplane service
@@ -78,17 +78,17 @@ kubernetes      ClusterIP   10.96.0.1        <none>        443/TCP        573d
 
 Create the JWKS Secret
 ```code
-kubectl create secret generic jwks-secret --from-file=auth=secret.jwks
+oc create secret generic jwks-secret --from-file=auth=secret.jwks
 ```
 
 Create the AuthenticationFilter 
 ```code
-kubectl apply -f 2.authenticationfilter.yaml
+oc apply -f 2.authenticationfilter.yaml
 ```
 
 Check the AuthenticationFilter
 ```code
-kubectl describe authenticationfilter jwt-auth-file
+oc describe authenticationfilter jwt-auth-file
 ```
 
 Output should be similar to
@@ -128,12 +128,12 @@ Events:                      <none>
 
 Create the HTTP route that references the AuthenticationFilter
 ```code
-kubectl apply -f 3.httproute.yaml
+oc apply -f 3.httproute.yaml
 ```
 
 Check the HTTP route
 ```code
-kubectl get httproute
+oc get httproute
 ```
 
 Output should be similar to
@@ -144,8 +144,8 @@ coffee   ["cafe.example.com"]   3s
 
 Get NGINX Gateway Fabric dataplane instance IP and HTTP port
 ```code
-export NGF_IP=`kubectl get pod -l app.kubernetes.io/instance=ngf -o json|jq '.items[0].status.hostIP' -r`
-export HTTP_PORT=`kubectl get svc gateway-nginx -o jsonpath='{.spec.ports[0].nodePort}'`
+export NGF_IP=`oc get pod -l app.kubernetes.io/instance=ngf -o json|jq '.items[0].status.hostIP' -r`
+export HTTP_PORT=`oc get svc gateway-nginx -o jsonpath='{.spec.ports[0].nodePort}'`
 ```
 
 Check NGINX Gateway Fabric dataplane instance IP and HTTP port
@@ -203,6 +203,6 @@ Request ID: 5afec06d5432b68456477e806cf8a52e
 Delete the lab
 
 ```code
-kubectl delete -f .
-kubectl delete secret jwks-secret
+oc delete -f .
+oc delete secret jwks-secret
 ```
