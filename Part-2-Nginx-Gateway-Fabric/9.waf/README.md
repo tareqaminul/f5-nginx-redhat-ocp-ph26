@@ -4,17 +4,17 @@ This use case shows how to use F5 WAF for NGINX to protect applications publishe
 
 `cd` into the lab directory
 ```bash
-cd ~/NGINX-Gateway-Fabric-Lab/labs/11.waf
+cd ~/Part-2-Nginx-Gateway-Fabric/9.waf
 ```
 
 Deploy two sample applications
 ```bash
-kubectl apply -f 0.apps.yaml
+oc apply -f 0.apps.yaml
 ```
 
 Verify that all pods are in the `Running` state
 ```bash
-kubectl get pods
+oc get pods
 ```
 
 Output should be similar to
@@ -26,12 +26,12 @@ tea-75bc9f4b6d-8bh4v         1/1     Running   0          10s
 
 Deploy the syslog service to receive F5 WAF for NGINX security violations logs
 ```bash
-kubectl apply -f 1.syslog.yaml
+oc apply -f 1.syslog.yaml
 ```
 
 Check the syslog pod status
 ```bash
-kubectl get pods
+oc get pods
 ```
 
 Output should be similar to
@@ -44,12 +44,12 @@ tea-75bc9f4b6d-8bh4v             1/1     Running   0          155m
 
 Create the gateway object. This deploys the NGINX Gateway Fabric dataplane pod in the current namespace, with WAF enabled
 ```bash
-kubectl apply -f 2.gateway.yaml
+oc apply -f 2.gateway.yaml
 ```
 
 Check the NGINX Gateway Fabric dataplane pod status
 ```
-kubectl get pods
+oc get pods
 ```
 
 The `gateway-nginx-65d8cf589b-8kf8h` pod is the NGINX Gateway Fabric dataplane
@@ -63,7 +63,7 @@ tea-75bc9f4b6d-8bh4v           1/1     Running   0          35s
 
 Check the gateway
 ```bash
-kubectl get gateway
+oc get gateway
 ```
 
 Output should be similar to
@@ -74,7 +74,7 @@ gateway   nginx   10.105.125.233   True         19s
 
 Check the NGINX Gateway Fabric Service
 ```bash
-kubectl get service
+oc get service
 ```
 
 `gateway-nginx` is the NGINX Gateway Fabric dataplane service
@@ -88,12 +88,12 @@ tea             ClusterIP   10.101.32.95     <none>        80/TCP         52s
 
 Create the HTTP routes
 ```bash
-kubectl apply -f 3.httproute.yaml
+oc apply -f 3.httproute.yaml
 ```
 
 Check the HTTP routes
 ```bash
-kubectl get httproute
+oc get httproute
 ```
 
 Output should be similar to
@@ -110,22 +110,22 @@ Create the WAF policy definitions `ConfigMap`. Two policies are defined:
 
 The bundle server will compile these into `.tgz` bundles at startup.
 ```bash
-kubectl apply -f 4.policies.yaml
+oc apply -f 4.policies.yaml
 ```
 
 Deploy the WAF policy bundle server: it compiles both policies and serves them over HTTP
 ```bash
-kubectl apply -f 5.bundleserver.yaml
+oc apply -f 5.bundleserver.yaml
 ```
 
 Wait for deployment and policy compilation to complete
 ```bash
-kubectl wait --for=condition=Available deployment/bundle-server --timeout=120s
+oc wait --for=condition=Available deployment/bundle-server --timeout=120s
 ```
 
 Check bundle server status
 ```
-kubectl get pods
+oc get pods
 ```
 
 The `bundle-server-6849977c89-hz6ff` pod is responsible for policy compilation into `.tgz` bundles
@@ -140,12 +140,12 @@ tea-75bc9f4b6d-8bh4v             1/1     Running   0          5m25s
 
 Apply the `attack-signatures-blocking` WAF policy at the `Gateway` level. This policy blocks common attack signatures such as cross-site scripting (XSS) and SQL injection
 ```bash
-kubectl apply -f 6.applywaf.yaml
+oc apply -f 6.applywaf.yaml
 ```
 
 Verify the WAF policy has been accepted and programmed
 ```bash
-kubectl describe wafpolicy gateway-base-protection
+oc describe wafpolicy gateway-base-protection
 ```
 
 All conditions should be set to `True` and output should be similar to
@@ -209,8 +209,8 @@ Events:                      <none>
 
 Get NGINX Gateway Fabric dataplane instance IP and HTTP port
 ```bash
-export NGF_IP=`kubectl get pod -l app.kubernetes.io/instance=ngf -o json|jq '.items[0].status.hostIP' -r`
-export HTTP_PORT=`kubectl get svc gateway-nginx -o jsonpath='{.spec.ports[0].nodePort}'`
+export NGF_IP=`oc get pod -l app.kubernetes.io/instance=ngf -o json|jq '.items[0].status.hostIP' -r`
+export HTTP_PORT=`oc get svc gateway-nginx -o jsonpath='{.spec.ports[0].nodePort}'`
 ```
 
 Check NGINX Gateway Fabric dataplane instance IP and HTTP port
@@ -220,7 +220,7 @@ echo -e "NGF address: $NGF_IP\nHTTP port  : $HTTP_PORT"
 
 In a separate shell display the syslog output
 ```bash
-kubectl exec -it "$(kubectl get pod -l app=syslog -o jsonpath='{.items[0].metadata.name}')" -- tail -f /var/log/messages
+oc exec -it "$(oc get pod -l app=syslog -o jsonpath='{.items[0].metadata.name}')" -- tail -f /var/log/messages
 ```
 
 Test application access
@@ -268,12 +268,12 @@ Output should be similar to
 
 Apply a route-level override using the `dataguard-blocking` WAF policy
 ```bash
-kubectl apply -f 7.routewafoverride.yaml
+oc apply -f 7.routewafoverride.yaml
 ```
 
 Wait for the policy to get to the `Programmed` state
 ```bash
-kubectl wait --for=jsonpath='{.status.ancestors[0].conditions[?(@.type=="Programmed")].status}'=True wafpolicy/customers-strict-protection --timeout=60s
+oc wait --for=jsonpath='{.status.ancestors[0].conditions[?(@.type=="Programmed")].status}'=True wafpolicy/customers-strict-protection --timeout=60s
 ```
 
 Send the initial request again
@@ -296,5 +296,5 @@ SSN: *******6789
 Delete the lab
 
 ```bash
-kubectl delete -f .
+oc delete -f .
 ```
