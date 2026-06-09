@@ -4,18 +4,18 @@ This use case shows how to set rate limits for HTTP and gRPC routes
 
 `cd` into the lab directory
 ```code
-cd ~/NGINX-Gateway-Fabric-Lab/labs/9.rate-limit
+cd ~/Part-2-Nginx-Gateway-Fabric/9.rate-limit
 ```
 
 Deploy the sample applications
 ```code
-kubectl apply -f 0.apps.yaml
+oc apply -f 0.apps.yaml
 ```
 
 Verify that all pods are in the `Running` state
 
 ```code
-kubectl get all
+oc get all
 ```
 
 Output should be similar to
@@ -41,12 +41,12 @@ replicaset.apps/grpc-backend-679d44cbbf   1         1         1       3s
 
 Create the gateway object. This deploys the NGINX Gateway Fabric dataplane pod in the current namespace and a `RateLimitPolicy`
 ```code
-kubectl apply -f 1.gateway.yaml
+oc apply -f 1.gateway.yaml
 ```
 
 Check the NGINX Gateway Fabric dataplane pod status
 ```code
-kubectl get pods
+oc get pods
 ```
 
 `gateway-nginx-6558bbcfdf-rksdl` is the NGINX Gateway Fabric dataplane pod
@@ -59,7 +59,7 @@ grpc-backend-679d44cbbf-bw6rf    1/1     Running   0          41s
 
 Check the gateway
 ```code
-kubectl get gateway
+oc get gateway
 ```
 
 Output should be similar to
@@ -70,7 +70,7 @@ gateway   nginx   10.104.194.160   True         49s
 
 Check the NGINX Gateway Fabric Service
 ```code
-kubectl get service
+oc get service
 ```
 
 `gateway-nginx` is the NGINX Gateway Fabric dataplane service
@@ -84,7 +84,7 @@ kubernetes      ClusterIP   10.96.0.1        <none>        443/TCP        573d
 
 Check the rate limit policy set at the gateway level
 ```code
-kubectl get ratelimitpolicy
+oc get ratelimitpolicy
 ```
 
 Output should be similar to
@@ -95,7 +95,7 @@ gateway-rate-limit   68s
 
 Describe the `RateLimitPolicy`: it enforces a rate limit of 10 requests per second at the gateway level
 ```code
-kubectl describe RateLimitPolicy gateway-rate-limit
+oc describe RateLimitPolicy gateway-rate-limit
 ```
 
 Output should be similar to
@@ -143,12 +143,12 @@ Events:                      <none>
 
 Create the HTTP and gRPC routes
 ```code
-kubectl apply -f 2.routes.yaml
+oc apply -f 2.routes.yaml
 ```
 
 Check the HTTP route
 ```code
-kubectl get httproute
+oc get httproute
 ```
 
 Output should be similar to
@@ -160,7 +160,7 @@ coffee   ["cafe.example.com"]   2s
 Check the gRPC route
 
 ```code
-kubectl get grpcroute
+oc get grpcroute
 ```
 
 Output should be similar to
@@ -171,12 +171,12 @@ grpc-route   ["grpc.example.com"]   11s
 
 Create the `RateLimitPolicy` attached to the coffee `HTTPRoute` and the grpc-route `GRPCRoute`
 ```code
-kubectl apply -f 3.route-ratelimit.yaml
+oc apply -f 3.route-ratelimit.yaml
 ```
 
 Check all rate limit policies
 ```code
-kubectl get ratelimitpolicy
+oc get ratelimitpolicy
 ```
 
 Output should be similar to
@@ -188,7 +188,7 @@ route-rate-limit     3s
 
 Describe the `RateLimitPolicy` applied at the `HTTPRoute` and `GRPCRoute` level
 ```code
-kubectl describe ratelimitpolicy route-rate-limit
+oc describe ratelimitpolicy route-rate-limit
 ```
 
 Output should be similar to
@@ -253,8 +253,8 @@ Events:                      <none>
 
 Get NGINX Gateway Fabric dataplane instance IP and HTTP port
 ```code
-export NGF_IP=`kubectl get pod -l app.kubernetes.io/instance=ngf -o json|jq '.items[0].status.hostIP' -r`
-export HTTP_PORT=`kubectl get svc gateway-nginx -o jsonpath='{.spec.ports[0].nodePort}'`
+export NGF_IP=`oc get pod -l app.kubernetes.io/instance=ngf -o json|jq '.items[0].status.hostIP' -r`
+export HTTP_PORT=`oc get svc gateway-nginx -o jsonpath='{.spec.ports[0].nodePort}'`
 ```
 
 Check NGINX Gateway Fabric dataplane instance IP and HTTP port
@@ -354,5 +354,5 @@ ERROR:
 Delete the lab
 
 ```code
-kubectl delete -f .
+oc delete -f .
 ```
