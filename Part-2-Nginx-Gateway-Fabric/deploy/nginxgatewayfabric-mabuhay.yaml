@@ -1,7 +1,7 @@
 kind: NginxGatewayFabric
 apiVersion: gateway.nginx.org/v1alpha1
 metadata:
-  name: nginxgatewayfabric-sample
+  name: nginxgatewayfabric-mabuhay
   namespace: nginx-gateway
 spec:
   certGenerator:
