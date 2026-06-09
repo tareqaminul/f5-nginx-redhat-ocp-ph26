@@ -4,23 +4,23 @@ This use case shows how to apply TLS offload and HTTP-to-HTTPS redirection
 
 `cd` into the lab directory
 ```code
-cd ~/NGINX-Gateway-Fabric-Lab/labs/4.tls-offload
+cd ~/Part-2-Nginx-Gateway-Fabric/4.tls-offload
 ```
 
 Create the certificate/key pair and the `ReferenceGrant` object
 ```code
-kubectl apply -f 0.certificate.yaml
+oc apply -f 0.certificate.yaml
 ```
 
 Deploy the sample web applications
 ```code
-kubectl apply -f 1.coffee.yaml
+oc apply -f 1.coffee.yaml
 ```
 
 Verify that all pods are in the `Running` state
 
 ```code
-kubectl get all
+oc get all
 ```
 
 Output should be similar to
@@ -42,12 +42,12 @@ replicaset.apps/coffee-56b44d4c55   1         1         1       3s
 
 Create the gateway object. This deploys the NGINX Gateway Fabric dataplane pod in the current namespace
 ```code
-kubectl apply -f 2.gateway.yaml
+oc apply -f 2.gateway.yaml
 ```
 
 Check the NGINX Gateway Fabric dataplane pod status
 ```
-kubectl get pods
+oc get pods
 ```
 
 `cafe-nginx-758ff7574c-kpbqx` pod is the NGINX Gateway Fabric dataplane
@@ -59,7 +59,7 @@ coffee-56b44d4c55-jdst2       1/1     Running   0          57s
 
 Check the gateway
 ```code
-kubectl get gateway
+oc get gateway
 ```
 
 Output should be similar to
@@ -70,7 +70,7 @@ cafe   nginx   10.110.127.86   True         45s
 
 Check the NGINX Gateway Fabric Service
 ```code
-kubectl get service
+oc get service
 ```
 
 `cafe-nginx` is the NGINX Gateway Fabric dataplane service
@@ -83,12 +83,12 @@ kubernetes   ClusterIP   10.96.0.1       <none>        443/TCP                  
 
 Create the HTTP routes
 ```code
-kubectl apply -f 3.httproute.yaml
+oc apply -f 3.httproute.yaml
 ```
 
 Check the HTTP routes
 ```code
-kubectl get httproute
+oc get httproute
 ```
 
 Output should be similar to
@@ -100,9 +100,9 @@ coffee              ["cafe.example.com"]   4s
 
 Get NGINX Gateway Fabric dataplane instance IP and HTTP port
 ```code
-export NGF_IP=`kubectl get pod -l app.kubernetes.io/instance=ngf -o json|jq '.items[0].status.hostIP' -r`
-export HTTP_PORT=`kubectl get svc cafe-nginx -o jsonpath='{.spec.ports[0].nodePort}'`
-export HTTPS_PORT=`kubectl get svc cafe-nginx -o jsonpath='{.spec.ports[1].nodePort}'`
+export NGF_IP=`oc get pod -l app.kubernetes.io/instance=ngf -o json|jq '.items[0].status.hostIP' -r`
+export HTTP_PORT=`oc get svc cafe-nginx -o jsonpath='{.spec.ports[0].nodePort}'`
+export HTTPS_PORT=`oc get svc cafe-nginx -o jsonpath='{.spec.ports[1].nodePort}'`
 ```
 
 Check NGINX Gateway Fabric dataplane instance IP and HTTP port
@@ -151,5 +151,5 @@ Request ID: 6cb931a24c1c1bbff763d5ba7481a2f3
 Delete the lab
 
 ```code
-kubectl delete -f .
+oc delete -f .
 ```
