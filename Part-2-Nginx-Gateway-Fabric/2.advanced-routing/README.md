@@ -9,14 +9,14 @@ cd ~/NGINX-Gateway-Fabric-Lab/labs/2.advanced-routing
 
 Deploy two sample web applications
 ```code
-kubectl apply -f 0.coffee.yaml
-kubectl apply -f 1.tea.yaml
+oc apply -f 0.coffee.yaml
+oc apply -f 1.tea.yaml
 ```
 
 Verify that all pods are in the `Running` state
 
 ```code
-kubectl get all
+oc get all
 ```
 
 Output should be similar to
@@ -58,12 +58,12 @@ replicaset.apps/tea-post-5647b8d885     1         1         1       91s
 
 Create the gateway object. This deploys the NGINX Gateway Fabric dataplane pod in the current namespace
 ```code
-kubectl apply -f 2.gateway.yaml
+oc apply -f 2.gateway.yaml
 ```
 
 Check the NGINX Gateway Fabric dataplane pod status
 ```
-kubectl get pods
+oc get pods
 ```
 
 `cafe-nginx-7444846d75-cgmms` pod is the NGINX Gateway Fabric dataplane
@@ -79,7 +79,7 @@ tea-post-5647b8d885-5xxvf     1/1     Running   0          113s
 
 Check the gateway
 ```code
-kubectl get gateway
+oc get gateway
 ```
 
 Output should be similar to
@@ -90,7 +90,7 @@ cafe   nginx   10.103.90.239   True         2m43s
 
 Check the NGINX Gateway Fabric Service
 ```code
-kubectl get service
+oc get service
 ```
 
 `cafe-nginx` is the NGINX Gateway Fabric dataplane service
@@ -107,12 +107,12 @@ tea-svc         ClusterIP   10.102.222.60    <none>        80/TCP         28s
 
 Create the HTTP routes
 ```code
-kubectl apply -f 3.cafe-routes.yaml
+oc apply -f 3.cafe-routes.yaml
 ```
 
 Check the HTTP routes
 ```code
-kubectl get httproute
+oc get httproute
 ```
 
 Output should be similar to
@@ -124,8 +124,8 @@ tea      ["cafe.example.com"]   8s
 
 Get NGINX Gateway Fabric dataplane instance IP and HTTP port
 ```code
-export NGF_IP=`kubectl get pod -l app.kubernetes.io/instance=ngf -o json|jq '.items[0].status.hostIP' -r`
-export HTTP_PORT=`kubectl get svc cafe-nginx -o jsonpath='{.spec.ports[0].nodePort}'`
+export NGF_IP=`oc get pod -l app.kubernetes.io/instance=ngf -o json|jq '.items[0].status.hostIP' -r`
+export HTTP_PORT=`oc get svc cafe-nginx -o jsonpath='{.spec.ports[0].nodePort}'`
 ```
 
 Check NGINX Gateway Fabric dataplane instance IP and HTTP port
@@ -234,5 +234,5 @@ Request ID: 92c6bb8c35b24c1ca0e68eaaf4bbbf40
 Delete the lab
 
 ```code
-kubectl delete -f .
+oc delete -f .
 ```
