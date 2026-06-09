@@ -9,13 +9,13 @@ cd ~/NGINX-Gateway-Fabric-Lab/labs/1.basic-app
 
 Deploy two sample web applications
 ```code
-kubectl apply -f 0.cafe.yaml
+oc apply -f 0.cafe.yaml
 ```
 
 Verify that all pods are in the `Running` state
 
 ```code
-kubectl get all
+oc get all
 ```
 
 Output should be similar to
@@ -41,12 +41,12 @@ replicaset.apps/tea-596697966f      1         1         1       8m39s
 
 Create the gateway object. This deploys the NGINX Gateway Fabric dataplane pod in the current namespace
 ```code
-kubectl apply -f 1.gateway.yaml
+oc apply -f 1.gateway.yaml
 ```
 
 Check the NGINX Gateway Fabric dataplane pod status
 ```
-kubectl get pods
+oc get pods
 ```
 
 The `gateway-nginx-c9bcdf4d4-4hl7c` pod is the NGINX Gateway Fabric dataplane
@@ -59,7 +59,7 @@ tea-596697966f-fwf2r            1/1     Running   0          47s
 
 Check the gateway
 ```code
-kubectl get gateway
+oc get gateway
 ```
 
 Output should be similar to
@@ -70,7 +70,7 @@ gateway   nginx   10.102.76.40   True         5s
 
 Check the NGINX Gateway Fabric Service
 ```code
-kubectl get service
+oc get service
 ```
 
 `gateway-nginx` is the NGINX Gateway Fabric dataplane service
@@ -84,12 +84,12 @@ tea             ClusterIP   10.96.115.255   <none>        80/TCP         2s
 
 Create the HTTP routes
 ```code
-kubectl apply -f 2.httproute.yaml
+oc apply -f 2.httproute.yaml
 ```
 
 Check the HTTP routes
 ```code
-kubectl get httproute
+oc get httproute
 ```
 
 Output should be similar to
@@ -101,8 +101,8 @@ tea      ["cafe.example.com"]   8s
 
 Get NGINX Gateway Fabric dataplane instance IP and HTTP port
 ```code
-export NGF_IP=`kubectl get pod -l app.kubernetes.io/instance=ngf -o json|jq '.items[0].status.hostIP' -r`
-export HTTP_PORT=`kubectl get svc gateway-nginx -o jsonpath='{.spec.ports[0].nodePort}'`
+export NGF_IP=`oc get pod -l app.kubernetes.io/instance=ngf -o json|jq '.items[0].status.hostIP' -r`
+export HTTP_PORT=`oc get svc gateway-nginx -o jsonpath='{.spec.ports[0].nodePort}'`
 ```
 
 Check NGINX Gateway Fabric dataplane instance IP and HTTP port
@@ -141,5 +141,5 @@ Request ID: 09603099f3ad42da023a6184019ffbb6
 Delete the lab
 
 ```code
-kubectl delete -f .
+oc delete -f .
 ```
