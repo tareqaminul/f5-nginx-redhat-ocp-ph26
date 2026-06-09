@@ -1,0 +1,140 @@
+kind: NginxGatewayFabric
+apiVersion: gateway.nginx.org/v1alpha1
+metadata:
+  name: nginxgatewayfabric-sample
+  namespace: nginx-gateway
+spec:
+  certGenerator:
+    affinity: {}
+    agentTLSSecretName: agent-tls
+    annotations: {}
+    enable: true
+    nodeSelector: {}
+    overwrite: false
+    serverTLSSecretName: server-tls
+    tolerations: []
+    topologySpreadConstraints: []
+    ttlSecondsAfterFinished: 30
+  clusterDomain: cluster.local
+  gateways: []
+  nginx:
+    autoscaling:
+      annotations: {}
+      behavior: {}
+      enable: false
+      maxReplicas: 10
+      metrics: []
+      minReplicas: 1
+      targetCPUUtilizationPercentage: 50
+      targetMemoryUtilizationPercentage: 50
+    config:
+      waf:
+        enable: true
+    container:
+      hostPorts: []
+      lifecycle: {}
+      readinessProbe: {}
+      resources: {}
+      volumeMounts: []
+    debug: false
+    image:
+      pullPolicy: IfNotPresent
+      repository: private-registry.nginx.com/nginx-gateway-fabric/nginx-plus-f5waf
+      tag: 2.6.3-ubi
+    imagePullSecret: regcred
+    imagePullSecrets: []
+    kind: deployment
+    nginxOneConsole:
+      dataplaneKeySecretName: ''
+      endpointHost: agent.connect.nginx.com
+      endpointPort: 443
+      skipVerify: false
+    patches: []
+    plus: true
+    pod: {}
+    replicas: 1
+    service:
+      externalTrafficPolicy: Cluster
+      loadBalancerClass: ''
+      loadBalancerIP: ''
+      loadBalancerSourceRanges: []
+      nodePorts: []
+      patches: []
+      type: NodePort
+    usage:
+      caSecretName: ''
+      clientSSLSecretName: ''
+      endpoint: ''
+      enforceInitialReport: true
+      resolver: ''
+      secretName: nplus-license
+      skipVerify: false
+  nginxGateway:
+    affinity: {}
+    autoscaling:
+      annotations: {}
+      behavior: {}
+      enable: false
+      maxReplicas: 10
+      metrics: []
+      minReplicas: 1
+      targetCPUUtilizationPercentage: 50
+      targetMemoryUtilizationPercentage: 50
+    config:
+      logging:
+        level: info
+    configAnnotations: {}
+    extraVolumeMounts: []
+    extraVolumes: []
+    gatewayClassAnnotations: {}
+    gatewayClassName: nginx
+    gatewayControllerName: gateway.nginx.org/nginx-gateway-controller
+    gwAPIExperimentalFeatures:
+      enable: false
+    gwAPIInferenceExtension:
+      enable: false
+      endpointPicker:
+        disableTLS: false
+        skipVerify: true
+    image:
+      pullPolicy: IfNotPresent
+      repository: ghcr.io/nginx/nginx-gateway-fabric
+      tag: 2.6.3-ubi
+    kind: deployment
+    labels: {}
+    leaderElection:
+      enable: true
+      lockName: ''
+    lifecycle: {}
+    metrics:
+      enable: true
+      port: 9113
+      secure: false
+    name: ''
+    nodeSelector: {}
+    podAnnotations: {}
+    priorityClassName: ''
+    productTelemetry:
+      enable: true
+    readinessProbe:
+      enable: true
+      initialDelaySeconds: 3
+      port: 8081
+    replicas: 1
+    resources: {}
+    service:
+      annotations: {}
+      labels: {}
+    serviceAccount:
+      annotations: {}
+      imagePullSecret: ''
+      imagePullSecrets: []
+      name: ''
+    snippets:
+      enable: false
+    snippetsFilters:
+      enable: false
+    terminationGracePeriodSeconds: 30
+    tolerations: []
+    topologySpreadConstraints: []
+    watchNamespaces: []
