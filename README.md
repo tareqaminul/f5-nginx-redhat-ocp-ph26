@@ -4,10 +4,7 @@
 
 ## CRDs
 
-NginxGatewayFabric              ← you edit THIS (operator/Helm-values layer)
-  └─ owns & generates ─┐
-       ├─ NginxGateway       → control plane config (logging level)
-       └─ NginxProxy         → data plane config (Service, Deployment, NGINX settings)
+
 
 
 
@@ -40,6 +37,6 @@ Editing `NginxGateway`/`NginxProxy` directly gets reconciled away — they're ou
 | Wired up by | OLM / the operator | controller `--nginx-gateway-config-name` | GatewayClass `parametersRef` or a Gateway |
 | Count in your cluster | **2** (nginx-gateway, crapi) | 1 per fabric instance | 1 per fabric instance |
 
-So the mental model: `NginxGatewayFabric` is the dial you turn; `NginxGateway` and `NginxProxy` are the readouts it drives, one per plane.
+`NginxGatewayFabric` is the dial you turn; `NginxGateway` and `NginxProxy` are the readouts it drives, one per plane.
 
-Want to check the crAPI install's current state before we start the walk, or confirm the operator's install mode first so you know exactly what the upgrade will touch?
+
