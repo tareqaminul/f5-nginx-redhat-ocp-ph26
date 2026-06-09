@@ -4,18 +4,18 @@ This use case shows how to manage gRPC traffic through NGINX Gateway Fabric
 
 `cd` into the lab directory
 ```code
-cd ~/NGINX-Gateway-Fabric-Lab/labs/6.grpc
+cd ~/Part-2-Nginx-Gateway-Fabric/6.grpc
 ```
 
 Deploy the sample application
 ```code
-kubectl apply -f 0.helloworld.yaml
+oc apply -f 0.helloworld.yaml
 ```
 
 Verify that all pods are in the `Running` state
 
 ```code
-kubectl get all
+oc get all
 ```
 
 Output should be similar to
@@ -41,12 +41,12 @@ replicaset.apps/grpc-infra-backend-v2-67fd996d5   1         1         1       26
 
 Create the gateway object and gRPC route based on exact method matching. This deploys the NGINX Gateway Fabric dataplane pod in the current namespace
 ```code
-kubectl apply -f 1.grpcroute-exactmethod.yaml
+oc apply -f 1.grpcroute-exactmethod.yaml
 ```
 
 Check the NGINX Gateway Fabric dataplane pod status
 ```
-kubectl get pods
+oc get pods
 ```
 
 `same-namespace-nginx-8c55bff94-mxmpx` is the NGINX Gateway Fabric dataplane
@@ -59,7 +59,7 @@ same-namespace-nginx-8c55bff94-mxmpx    1/1     Running   0          9s
 
 Check the gateway
 ```code
-kubectl get gateway
+oc get gateway
 ```
 
 Output should be similar to
@@ -70,7 +70,7 @@ same-namespace   nginx   10.110.235.199   True         63s
 
 Check the NGINX Gateway Fabric Service
 ```code
-kubectl get service
+oc get service
 ```
 
 `same-namespace-nginx` is the NGINX Gateway Fabric dataplane service
@@ -84,7 +84,7 @@ same-namespace-nginx    NodePort    10.110.235.199   <none>        80:32081/TCP 
 
 Check the gRPC routes
 ```code
-kubectl get grpcroutes
+oc get grpcroutes
 ```
 
 Output should be similar to
@@ -95,8 +95,8 @@ exact-matching               2m41s
 
 Get NGINX Gateway Fabric dataplane instance IP and HTTP port
 ```code
-export NGF_IP=`kubectl get pod -l app.kubernetes.io/instance=ngf -o json|jq '.items[0].status.hostIP' -r`
-export HTTP_PORT=`kubectl get svc same-namespace-nginx -o jsonpath='{.spec.ports[0].nodePort}'`
+export NGF_IP=`oc get pod -l app.kubernetes.io/instance=ngf -o json|jq '.items[0].status.hostIP' -r`
+export HTTP_PORT=`oc get svc same-namespace-nginx -o jsonpath='{.spec.ports[0].nodePort}'`
 ```
 
 Check NGINX Gateway Fabric dataplane instance IP and HTTP port
@@ -118,18 +118,18 @@ Output should be
 
 Remove the exact method matching gRPC route
 ```code
-kubectl delete -f 1.grpcroute-exactmethod.yaml
+oc delete -f 1.grpcroute-exactmethod.yaml
 ```
 
 Create the hostname-based gRPC route
 ```code
-kubectl apply -f 2.grpcroute-hostname.yaml
+oc apply -f 2.grpcroute-hostname.yaml
 ```
 
 Get NGINX Gateway Fabric dataplane instance IP and HTTP port
 ```code
-export NGF_IP=`kubectl get pod -l app.kubernetes.io/instance=ngf -o json|jq '.items[0].status.hostIP' -r`
-export HTTP_PORT=`kubectl get svc grpcroute-listener-hostname-matching-nginx -o jsonpath='{.spec.ports[0].nodePort}'`
+export NGF_IP=`oc get pod -l app.kubernetes.io/instance=ngf -o json|jq '.items[0].status.hostIP' -r`
+export HTTP_PORT=`oc get svc grpcroute-listener-hostname-matching-nginx -o jsonpath='{.spec.ports[0].nodePort}'`
 ```
 
 Check NGINX Gateway Fabric dataplane instance IP and HTTP port
@@ -144,7 +144,7 @@ grpcurl -plaintext -proto grpc.proto -authority bar.com -d '{"name": "bar server
 
 The request has been routed to pod `grpc-infra-backend-v1`
 ```code
-kubectl logs -l app=grpc-infra-backend-v1
+oc logs -l app=grpc-infra-backend-v1
 ```
 
 Output should be similar to
@@ -161,7 +161,7 @@ grpcurl -plaintext -proto grpc.proto -authority foo.bar.com -d '{"name": "bar se
 
 The request has been routed to pod `grpc-infra-backend-v2`
 ```code
-kubectl logs -l app=grpc-infra-backend-v2
+oc logs -l app=grpc-infra-backend-v2
 ```
 
 Output should be similar to
@@ -172,18 +172,18 @@ Output should be similar to
 
 Remove the hostname-based gRPC route
 ```code
-kubectl delete -f 2.grpcroute-hostname.yaml
+oc delete -f 2.grpcroute-hostname.yaml
 ```
 
 Create the headers-based gRPC route
 ```code
-kubectl apply -f 3.grpcroute-header.yaml
+oc apply -f 3.grpcroute-header.yaml
 ```
 
 Get NGINX Gateway Fabric dataplane instance IP and HTTP port
 ```code
-export NGF_IP=`kubectl get pod -l app.kubernetes.io/instance=ngf -o json|jq '.items[0].status.hostIP' -r`
-export HTTP_PORT=`kubectl get svc same-namespace-nginx -o jsonpath='{.spec.ports[0].nodePort}'`
+export NGF_IP=`oc get pod -l app.kubernetes.io/instance=ngf -o json|jq '.items[0].status.hostIP' -r`
+export HTTP_PORT=`oc get svc same-namespace-nginx -o jsonpath='{.spec.ports[0].nodePort}'`
 ```
  
 Check NGINX Gateway Fabric dataplane instance IP and HTTP port
@@ -198,7 +198,7 @@ grpcurl -plaintext -proto grpc.proto -authority bar.com -d '{"name": "version on
 
 The request has been routed to pod `grpc-infra-backend-v1`
 ```code
-kubectl logs -l app=grpc-infra-backend-v1
+oc logs -l app=grpc-infra-backend-v1
 ```
 
 Output should be similar to
@@ -216,7 +216,7 @@ grpcurl -plaintext -proto grpc.proto -authority bar.com -d '{"name": "version tw
 
 The request has been routed to pod `grpc-infra-backend-v2`
 ```code
-kubectl logs -l app=grpc-infra-backend-v2
+oc logs -l app=grpc-infra-backend-v2
 ```
 
 Output should be similar to
@@ -233,7 +233,7 @@ grpcurl -plaintext -proto grpc.proto -authority bar.com -d '{"name": "grpc-heade
 
 The request has been routed to pod `grpc-infra-backend-2`
 ```code
-kubectl logs -l app=grpc-infra-backend-v2
+oc logs -l app=grpc-infra-backend-v2
 ```
 
 Output should be similar to
@@ -251,7 +251,7 @@ grpcurl -plaintext -proto grpc.proto -authority bar.com -d '{"name": "blue 1"}' 
 
 The request has been routed to pod `grpc-infra-backend-v1`
 ```code
-kubectl logs -l app=grpc-infra-backend-v1
+oc logs -l app=grpc-infra-backend-v1
 ```
 
 Output should be similar to
@@ -271,7 +271,7 @@ grpcurl -plaintext -proto grpc.proto -authority bar.com -d '{"name": "red 2"}' -
 
 The request has been routed to pod `grpc-infra-backend-v2`
 ```code
-kubectl logs -l app=grpc-infra-backend-v2
+oc logs -l app=grpc-infra-backend-v2
 ```
 
 Output should be similar to
@@ -286,5 +286,5 @@ Output should be similar to
 Delete the lab
 
 ```code
-kubectl delete -f .
+oc delete -f .
 ```
