@@ -1,8 +1,6 @@
 # OpenShift helpers
 
-This directory contains OpenShift-specific resources that the upstream `oltra`
-lab does not need (it targets vanilla Kubernetes in F5 UDF). See
-[`../ocp-changes.md`](../ocp-changes.md) for the full list of adaptations.
+This directory contains OpenShift-specific resources 
 
 | File | Purpose |
 |---|---|
