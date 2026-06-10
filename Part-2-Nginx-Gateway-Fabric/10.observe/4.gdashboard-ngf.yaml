@@ -1,0 +1,12 @@
+apiVersion: grafana.integreatly.org/v1beta1
+kind: GrafanaDashboard
+metadata:
+  name: ngf-mabuhay
+  namespace: grafana
+spec:
+  instanceSelector:
+    matchLabels: { dashboards: grafana }
+  datasources:
+    - inputName: "DS_PROMETHEUS"
+      datasourceName: "Prometheus"
+  url: https://docs.nginx.com/ngf/grafana-dashboard.json
