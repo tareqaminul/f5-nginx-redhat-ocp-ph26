@@ -1,1 +1,34 @@
-#test
+# Getting started with use cases
+
+1. Clone this repository
+
+```code
+git clone https://github.com/tareqaminul/f5-nginx-redhat-ocp-ph26.git
+```
+
+2. Change directory
+
+```code
+cd f5-nginx-redhat-ocp-ph26/Part-2-Nginx-Gateway-Fabric
+```
+
+## Running use cases
+
+- [Lab 1](1.basic) - Basic URI-based routing
+- [Lab 2](2.advanced-routing) - Advanced routing using HTTP matching conditions
+- [Lab 3](3.http-headers) - Modify HTTP request and response headers
+- [Lab 4](4.tls-offload) - TLS offload
+- [Lab 5](5.traffic-splitting) - Traffic splitting
+- [Lab 6](6.grpc) - gRPC support
+- [Lab 7](7.auth-jwt) - JWT authentication
+- [Lab 8](8.rate-limit) - Rate limiting
+- [Lab 9](9.waf) - F5 WAF for NGINX
+
+The official NGINX Gateway Fabric repository provides additional [examples](https://github.com/nginx/nginx-gateway-fabric/tree/main/examples)
+
+# NGF Bascis
+
+
+# NGF for OpenShift
+
+## CRDs
