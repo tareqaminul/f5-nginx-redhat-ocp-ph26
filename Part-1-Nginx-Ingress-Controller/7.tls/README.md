@@ -9,7 +9,7 @@ Use the terminal on VS Code. VS Code is under the `Client` on the `Access` drop-
 
 Change the working directory to `tls`.
 ```
-cd ~/oltra/use-cases/nic-examples/custom-resources/tls
+cd ~/f5-nginx-redhat-ocp-ph26/Part-1-Nginx-Ingress-Controller/7.tls
 ```
 
 ## Step 1 - Deploy the Cafe Application
