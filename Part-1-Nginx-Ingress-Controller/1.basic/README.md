@@ -9,7 +9,7 @@ Use the terminal on VS Code. VS Code is under the `Client` on the `Access` drop-
 
 Change the working directory to `basic`.
 ```
-cd ~/oltra/use-cases/nic-examples/custom-resources/basic
+cd ~/f5-nginx-redhat-ocp-ph26/Part-1-Nginx-Ingress-Controller/basic
 ```
 
 ## Step 1 - Deploy the Cafe Application
