@@ -11,7 +11,7 @@ Use the terminal on VS Code. VS Code is under the `Client` on the `Access` drop-
 
 Change the working directory to `cross-namespace-configuration`.
 ```
-cd ~/oltra/use-cases/nic-examples/custom-resources/cross-namespace-configuration
+cd ~/f5-nginx-redhat-ocp-ph26/Part-1-Nginx-Ingress-Controller/cross-namespace-configuration
 ```
 
 ## Step 1 - Create Namespaces
