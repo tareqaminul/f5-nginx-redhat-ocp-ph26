@@ -4,7 +4,7 @@ This use case shows how to publish two sample applications using HTTP matching c
 
 `cd` into the lab directory
 ```code
-cd ~/NGINX-Gateway-Fabric-Lab/labs/2.advanced-routing
+cd ~/f5-nginx-redhat-ocp-ph26/Part-2-Nginx-Gateway-Fabric/2.advanced-routing
 ```
 
 Deploy two sample web applications
