@@ -4,7 +4,7 @@ This use case shows how to apply TLS offload and HTTP-to-HTTPS redirection
 
 `cd` into the lab directory
 ```code
-cd ~/Part-2-Nginx-Gateway-Fabric/4.tls-offload
+cd ~/f5-nginx-redhat-ocp-ph26/Part-2-Nginx-Gateway-Fabric/4.tls-offload
 ```
 
 Create the certificate/key pair and the `ReferenceGrant` object
