@@ -4,7 +4,7 @@ This use case shows how to manage gRPC traffic through NGINX Gateway Fabric
 
 `cd` into the lab directory
 ```code
-cd ~/Part-2-Nginx-Gateway-Fabric/6.grpc
+cd ~/f5-nginx-redhat-ocp-ph26/Part-2-Nginx-Gateway-Fabric/6.grpc
 ```
 
 Deploy the sample application
