@@ -4,7 +4,7 @@ This use case shows how to split traffic between two versions of the same applic
 
 `cd` into the lab directory
 ```code
-cd ~/Part-2-Nginx-Gateway-Fabric/5.traffic-splitting
+cd ~/f5-nginx-redhat-ocp-ph26/Part-2-Nginx-Gateway-Fabric/5.traffic-splitting
 ```
 
 Deploy the sample application: two versions will be run
