@@ -4,7 +4,7 @@ This use case shows how to set rate limits for HTTP and gRPC routes
 
 `cd` into the lab directory
 ```code
-cd ~/Part-2-Nginx-Gateway-Fabric/9.rate-limit
+cd ~/f5-nginx-redhat-ocp-ph26/Part-2-Nginx-Gateway-Fabric/9.rate-limit
 ```
 
 Deploy the sample applications
