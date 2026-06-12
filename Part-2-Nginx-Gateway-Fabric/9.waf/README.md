@@ -4,7 +4,7 @@ This use case shows how to use F5 WAF for NGINX to protect applications publishe
 
 `cd` into the lab directory
 ```bash
-cd ~/Part-2-Nginx-Gateway-Fabric/9.waf
+cd ~/f5-nginx-redhat-ocp-ph26/Part-2-Nginx-Gateway-Fabric/9.waf
 ```
 
 Deploy two sample applications
