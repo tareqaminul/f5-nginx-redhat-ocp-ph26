@@ -4,7 +4,7 @@ This use case shows how to enforce JWT authentication
 
 `cd` into the lab directory
 ```code
-cd ~/Part-2-Nginx-Gateway-Fabric/8.auth-jwt
+cd ~/f5-nginx-redhat-ocp-ph26/Part-2-Nginx-Gateway-Fabric/8.auth-jwt
 ```
 
 Deploy the sample application
