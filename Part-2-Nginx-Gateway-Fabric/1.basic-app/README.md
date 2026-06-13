@@ -38,6 +38,7 @@ NAME                                DESIRED   CURRENT   READY   AGE
 replicaset.apps/coffee-56b44d4c55   1         1         1       8m39s
 replicaset.apps/tea-596697966f      1         1         1       8m39s
 ```
+Ignore if you have additional services, such as, service/openshift, service/kubernetes etc.
 
 Create the gateway object. This deploys the NGINX Gateway Fabric dataplane pod in the current namespace
 ```code
