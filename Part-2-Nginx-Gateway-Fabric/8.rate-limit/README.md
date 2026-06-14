@@ -253,7 +253,7 @@ Events:                      <none>
 
 Get NGINX Gateway Fabric dataplane instance IP and HTTP port
 ```code
-export NGF_IP=`oc get pod -l app.kubernetes.io/instance=ngf -o json|jq '.items[0].status.hostIP' -r`
+export NGF_IP=$(oc get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}' | awk '{print $1}')
 export HTTP_PORT=`oc get svc gateway-nginx -o jsonpath='{.spec.ports[0].nodePort}'`
 ```
 
