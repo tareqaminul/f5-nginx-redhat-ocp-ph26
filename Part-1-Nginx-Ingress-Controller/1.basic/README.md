@@ -45,7 +45,7 @@ Events:
   
 To get coffee:
 ```
-curl http://basic-vs.f5k8s.net/coffee
+curl http://basic-vs.f5k8s.net:30000/coffee
 
 ###########  Expected Output  ##########
 Server address: 10.244.196.136:8080
@@ -58,7 +58,7 @@ Request ID: 5ca5c11a263c4457ebb8194319fdc19e
 
 If your prefer tea:
 ```
-curl http://basic-vs.f5k8s.net/tea
+curl http://basic-vs.f5k8s.net:30000/tea
 
 
 ###########  Expected Output  ##########
