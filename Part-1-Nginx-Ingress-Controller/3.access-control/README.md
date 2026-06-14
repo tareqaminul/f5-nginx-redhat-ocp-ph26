@@ -37,7 +37,7 @@ oc apply -f virtual-server.yaml
 
 Let's access the application:
 ```
-curl http://webapp.f5k8s.net
+curl http://webapp.f5k8s.net:30000
 ```
 
 The expected output is:
@@ -66,7 +66,7 @@ oc apply -f access-control-policy-allow.yaml
 
 Let's access the application again:
 ```
-curl http://webapp.f5k8s.net
+curl http://webapp.f5k8s.net:30000
 ```
 
 The expected output is:
