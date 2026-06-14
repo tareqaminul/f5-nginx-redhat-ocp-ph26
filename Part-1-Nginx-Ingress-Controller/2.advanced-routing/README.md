@@ -87,7 +87,7 @@ Access the tea service using curl. We'll use curl's `--resolve` option to set th
     
 Send a POST request and confirm that the response comes from `tea-post-svc`:
 ```
-curl http://cafe.f5k8s.net/tea -X POST
+curl http://cafe.f5k8s.net:30000/tea -X POST
 
 ####################################     Expected Output    ####################################
 Server address: 10.244.140.68:8080
@@ -100,7 +100,7 @@ Request ID: 596ac247f4c7289c05f98dffac281dd5
 
 Send a GET request and confirm that the response comes from `tea-svc`:
 ```
-curl http://cafe.f5k8s.net/tea
+curl http://cafe.f5k8s.net:30000/tea
 
 ####################################     Expected Output    ####################################
 Server address: 10.244.196.189:8080
@@ -115,7 +115,7 @@ Access the coffee service:
     
 Send a request with the cookie `version=v2` and confirm that the response comes from `coffee-v2-svc`:
 ```
-curl http://cafe.f5k8s.net/coffee --cookie "version=v2"
+curl http://cafe.f5k8s.net:30000/coffee --cookie "version=v2"
 
 ####################################     Expected Output    ####################################
 Server address: 10.244.140.86:8080
@@ -129,7 +129,7 @@ Request ID: 32f990e7e9624d7c1bac3d0735ea1e45
 
 Send a request without the cookie and confirm that the response comes from `coffee-v1-svc`:
 ```
-curl http://cafe.f5k8s.net/coffee
+curl http://cafe.f5k8s.net:30000/coffee
 
 ####################################     Expected Output    ####################################
 Server address: 10.244.140.73:8080
