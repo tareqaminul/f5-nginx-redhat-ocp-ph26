@@ -52,7 +52,7 @@ Events:
   
 To get coffee:
 ```
-curl https://tls.f5k8s.net/coffee
+curl https://tls.f5k8s.net:30400/coffee
 
 ###########  Expected Output  ##########
 Server address: 10.244.196.136:8080
@@ -65,7 +65,7 @@ Request ID: 5ca5c11a263c4457ebb8194319fdc19e
 
 If your prefer tea:
 ```
-curl https://tls.f5k8s.net/tea
+curl https://tls.f5k8s.net:30400/tea
 
 
 ###########  Expected Output  ##########
