@@ -41,7 +41,7 @@ Events:
 ```
 
 ```cmd
-for i in {1..20} ; do curl -s http://ab.f5k8s.net/app | grep app-v.; done
+for i in {1..20} ; do curl -s http://ab.f5k8s.net:30000/app | grep app-v.; done
 ```
 
 80% of responses will come from `app-v1-svc` and 20 % of responses will come from `app-v2-svc`:
