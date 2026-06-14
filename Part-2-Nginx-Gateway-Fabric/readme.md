@@ -68,3 +68,8 @@ Editing `NginxGateway`/`NginxProxy` directly gets reconciled away — they're ou
 
 `NginxGatewayFabric` is the dial you turn; `NginxGateway` and `NginxProxy` are the readouts it drives, one per plane.
 
+## USE this before cURL
+```sh
+export NGF_IP=$(oc get nodes -o jsonpath='{.items[0].status.addresses[?(@.type=="InternalIP")].address}' | awk '{print $1}')
+export HTTP_PORT=`oc get svc gateway-nginx -o jsonpath='{.spec.ports[0].nodePort}'`
+```
