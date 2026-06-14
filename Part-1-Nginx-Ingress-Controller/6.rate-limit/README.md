@@ -40,7 +40,7 @@ Note that the VirtualServer references the policy `rate-limit-policy` created in
 
 Let's test the configuration. If you access the application at a rate less than one request per second, NGINX will allow your requests:
 ```cmd
-for i in {1..10} ; do curl http://rate.f5k8s.net/; sleep 1; done
+for i in {1..10} ; do curl http://rate.f5k8s.net:30000/; sleep 1; done
 ```
 
 The expected output is:
@@ -54,7 +54,7 @@ Request ID: a8d0428ffc9a9113a81fc3063327897c
 
 If you access the application at a rate higher than one request per second, NGINX will start rejecting your requests:
 ```cmd
-for i in {1..10} ; do curl http://rate.f5k8s.net/; done
+for i in {1..10} ; do curl http://rate.f5k8s.net:30000/; done
 ```
 
 The expected output is:
