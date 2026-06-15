@@ -12,7 +12,7 @@ cd ~/f5-nginx-redhat-ocp-ph26/Part-1-Nginx-Ingress-Controller/9.waf
 Deploy the application manifest and service:
 ```
 kubectl create namespace nap
-kubectl apply -f app.yml
+kubectl apply -f app.yaml
 ```
 
 ## Step 2 - Deploy the AP Policy
@@ -20,7 +20,7 @@ APPolicy manifest helps you create your App Protect WAF policies that you will l
 
 > Note: The relationship between the Policy JSON and the resource spec is 1:1.
 
-Eg: APPolicy.yml
+Eg: APPolicy.yaml
 ```yml
 apiVersion: appprotect.f5.com/v1beta1
 kind: APPolicy
@@ -39,13 +39,13 @@ In this example we will be using a simple NAP policy that references mainly the 
 
 Create the App Protect policy.
 ```
-kubectl apply -f appolicy.yml
+kubectl apply -f appolicy.yaml
 ```
 
 ## Step 3 - Deploy the AP Log
 `APLogConf` resource helps you define the logging profile that will be used along with the APPolicy. You would define that config in the spec of your APLogConf resource as follows::
 
-Eg: APLogConf.yml
+Eg: APLogConf.yaml
 ```yml
 apiVersion: appprotect.f5.com/v1beta1
 kind: APLogConf
@@ -62,13 +62,13 @@ spec:
 
 Create APLogConf resource:
 ```
-kubectl apply -f log.yml
+kubectl apply -f log.yaml
 ```
 
 ## Step 4 - Deploy the NGINX Policy
 NGINX Policy is where you define as part of the `waf` spec the APPolicy, the APLogConf profile and the log destination that you would like to use.
 
-Eg: Policy.yml
+Eg: Policy.yaml
 ```yml
 apiVersion: k8s.nginx.org/v1
 kind: Policy
@@ -86,13 +86,13 @@ spec:
 
 Create the NGINX policy to reference the AP Policy, the AP Log profile and the log destination.
 ```
-kubectl apply -f policy.yml
+kubectl apply -f policy.yaml
 ```
 
 ## Step 5 - Configure the VirtualServer resource
 On the VirtualServer resource we reference the NGINX policy we just created, in order for NGINX APP Protect to be enforced. 
 
-Eg: VirtualServer.yml
+Eg: VirtualServer.yaml
 ```yml
 apiVersion: k8s.nginx.org/v1
 kind: VirtualServer
@@ -114,7 +114,7 @@ spec:
 
 Create the VirtualServer resource:
 ```
-kubectl apply -f virtual-server.yml
+kubectl apply -f virtual-server.yaml
 ```
 
 ## Step 6 - Test the Application
