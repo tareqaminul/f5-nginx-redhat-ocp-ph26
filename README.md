@@ -1,21 +1,6 @@
-# Intro
 
-## LAB Readiness
-This Blueprint will give you a default Openshift environment without CIS, Aspen Mesh or NGINX, but it is ready to get them added.
-
-***BIG-IP 1NIC mode is no longer needed*** Please note that the cluster built in this blueprint uses the internal network 10.1.10.0/24 so it is possible to use BIG-IP with more than one interface.In previous versions of this blueprint it was needed to use BIG-IP in 1nic mode.
-
-# Additional Openshift setup:
-
-- Ansible
-- OpenEBS storage provider
-- Image registry. 
-- Setup of a CA (in /usr/share/nginx/html/installations/CA/easy-ca/bd.f5.com)
-- Setup of DNS wildcard zones for OCP default Ingress (*.apps.ocp.f5-udf.com) and AM Ingress gateway (*.am.ocp.f5-udf.com)
 
 This Openshift cluster has 3 masters and 2 workers (masters are scheduleable too). 
-
-If you want any enhancement or you find that something doesn't work please contact me.
 
 # Using the Deployment
 
