@@ -60,6 +60,13 @@ You can use the UI either using XRDP or Firefox SaaS, using the HTTP auth provid
 - Use the FIREFOX link of the ocp-provisioner node. With this you will be running a docker firefox remotely inside your browser, from there you can browse to the OpenShift UI URLs (or any other). 
 
 ```
+# In the OCP Provisioner start the Firefox docker container
+docker start firefox
+# Verify
+docker ps
+docker ps -a
+
+# If Firefox is not starting, re-create the container
 docker run -d \
     --name=firefox \
     --network host \
@@ -90,8 +97,3 @@ Sample usage from the ocp-provider host:
 ## Stopping the Deployment
 
 Nothing special needs to be done. UDF stops the cluster by means of signaling the nodes and that gives plenty of time for them to shutdown orderly.
-
-# How this has been built
-
-To see how this cluster is built, check out https://f5-my.sharepoint.com/:t:/p/u_alonsocamaro/ERHC3SQCIJ9NvmNJuwN2hEwBT08zF1E9f_w4VBk-AHWXFQ?e=gEvPkr
-
