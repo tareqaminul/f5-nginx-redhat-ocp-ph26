@@ -66,7 +66,7 @@ docker start firefox
 docker ps
 docker ps -a
 
-# If Firefox is not starting, re-create the container
+# If Firefox fails to start, re-create the container
 docker run -d \
     --name=firefox \
     --network host \
