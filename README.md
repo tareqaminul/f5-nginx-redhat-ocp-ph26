@@ -92,8 +92,3 @@ Sample usage from the ocp-provider host:
     docker login -u f5admin -p $(oc whoami -t) $registry
     docker push $registry/registry-images/nginx
 ```
-
-
-## Stopping the Deployment
-
-Nothing special needs to be done. UDF stops the cluster by means of signaling the nodes and that gives plenty of time for them to shutdown orderly.
