@@ -1,3 +1,2 @@
-# Observability for NGF, NAP
-- Open Grafana (Bookmarked) in Firefox, available in OCP Provisioner system.
-- Explore Data Sources and Dashboards. 
+# Pls jump on to Part 3
+[Part-3-Observability](https://github.com/tareqaminul/f5-nginx-redhat-ocp-ph26/tree/main/Part-3-Observability)
