@@ -28,6 +28,92 @@ The official NGINX Gateway Fabric repository provides additional [examples](http
 
 # NGF Bascis
 
+### The Gateway API: A Paradigm Shift in Kubernetes Traffic Management
+
+Kubernetes has become the foundation for cloud-native applications, but managing and routing traffic within clusters remains challenging. The traditional Ingress resource, while helpful for exposing services, has shown significant limitations:
+
+- **Loosely defined specifications** leading to controller-specific behaviors
+- **Annotation overload** making configurations complex and unportable
+- **Limited support** for advanced deployment patterns (canary, blue-green releases)
+- **Vendor lock-in** through proprietary extensions and features
+
+### Enter the Gateway API
+
+The Kubernetes Gateway API is a new, standards-based approach to service networking that addresses these limitations by providing:
+
+- **Greater flexibility** with role-oriented design
+- **Comprehensive feature set** for modern traffic management
+- **Built-in support** for TLS offloading, traffic splitting, and service mesh integration
+- **Clear separation** between platform engineers, developers, and security teams
+
+> **💡 Key Concept**: Just like Ingress controllers, the Gateway API separates concerns:
+> 
+> - **Gateway API Resources**: Define routing rules (Gateway, HTTPRoute, etc.)
+> - **Gateway API Controller**: Handles actual traffic routing (not built into Kubernetes)
+> 
+> You must install a Gateway API controller implementation, such as NGINX Gateway Fabric, to process these resources.
+
+---
+
+## NGINX Gateway Fabric - F5 NGINX Implementaion of Gateway API
+NGINX Gateway Fabric provides an implementation of the Gateway API using NGINX as the data plane. The goal of the project is to implement the core Gateway APIs needed to configure an HTTP or TCP/UDP load balancer, reverse proxy, or API gateway for Kubernetes applications.
+
+Built on the Gateway API standard, NGINX Gateway Fabric offers a production-ready solution. It combines the robustness and performance of NGINX with the extensibility of this new standard. It provides consistent traffic management, observability, and security across Kubernetes clusters. Additionally, its integration with NGINX One Console enables centralized control and monitoring in distributed environments.
+
+For a list of supported Gateway API resources and features, see the [Gateway API Compatibility](https://docs.nginx.com/nginx-gateway-fabric/overview/gateway-api-compatibility/) documentation.
+---
+
+
+## Architecture
+
+### NGINX Gateway Fabric Overview
+
+[NGINX Gateway Fabric](https://github.com/nginx/nginx-gateway-fabric) is F5 NGINX's production-ready implementation of the Gateway API standard. It leverages NGINX as the data plane to provide:
+
+- High-performance HTTP and TCP/UDP load balancing
+- Reverse proxy and API gateway capabilities
+- Centralized management via NGINX One Console
+- Full observability and security features
+
+For a complete list of supported resources and features, see the [Gateway API Compatibility](https://docs.nginx.com/nginx-gateway-fabric/overview/gateway-api-compatibility/) documentation.
+
+### Design
+
+NGINX Gateway Fabric uses a split-plane architecture with two controller types:
+
+#### Control Plane Controller
+- Deployed when you install NGINX Gateway Fabric
+- Watches Gateway API custom resources (Gateway, HTTPRoute, TLSRoute, etc.)
+- Translates Gateway API resources into NGINX configurations
+- Manages the lifecycle of data plane deployments
+
+#### Data Plane Controller
+- Dynamically created when a Gateway resource is provisioned
+- Consists of NGINX container with NGINX Agent
+- Handles actual traffic routing to services
+- Each Gateway gets its own isolated data plane deployment
+
+```mermaid
+graph TB
+    A[Client Request] --> B[Gateway Service]
+    B --> C[Data Plane Pod]
+    C --> D[NGINX Container]
+    C --> E[NGINX Agent]
+    F[Control Plane Controller] -->|Watches| G[Gateway API Resources]
+    F -->|Creates Config| E
+    F -->|Provisions| C
+    D --> H[Backend Services]
+```
+**NGF Workflow:**
+
+1. Control plane watches Kubernetes API for Gateway resources
+2. When a Gateway is created, control plane provisions a new data plane deployment
+3. Control plane generates NGINX configuration and pushes to NGINX Agent
+4. Data plane routes traffic according to HTTPRoute and other routing rules
+
+Learn more: [Gateway Architecture Documentation](https://docs.nginx.com/nginx-gateway-fabric/overview/gateway-architecture/)
+---
+
 
 # NGF for OpenShift
 
