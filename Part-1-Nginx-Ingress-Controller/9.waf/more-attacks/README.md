@@ -8,7 +8,6 @@ In this section we will configure **NGINX App Protect** for different type of at
 
 1. Deploy the application manifest and service:
   ```
-  kubectl create namespace nap
   kubectl apply -f app.yml
   ```
 
