@@ -2,11 +2,7 @@
 
 In this example we are using [NGINX App Protect](https://www.nginx.com/products/nginx-app-protect/) as part of an `Virtual Server` CRD to protect a Web Application running inside Kubernetes.
 
-## Prerequisites
-
-> *To run the demos, use the terminal on VS Code. VS Code is under the `bigip-01` on the `Access` drop-down menu. Click <a href="https://raw.githubusercontent.com/F5EMEA/oltra/main/vscode.png"> here </a> to see how.*
-
-Change the working directory to `virtualserver`.
+Change the working directory to `9.waf`.
 ```
 cd ~/f5-nginx-redhat-ocp-ph26/Part-1-Nginx-Ingress-Controller/9.waf
 ```
