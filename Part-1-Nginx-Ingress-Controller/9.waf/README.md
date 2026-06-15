@@ -11,7 +11,6 @@ cd ~/f5-nginx-redhat-ocp-ph26/Part-1-Nginx-Ingress-Controller/9.waf
 
 Deploy the application manifest and service:
 ```
-kubectl create namespace nap
 kubectl apply -f app.yaml
 ```
 
