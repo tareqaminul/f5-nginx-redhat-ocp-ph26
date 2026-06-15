@@ -151,7 +151,7 @@ curl "http://nap-vs.f5k8s.net:30000/<script>"
 
 ## Step 6 - Review Logs
 
-To review the logs login to Grafana and search with the support ID. More information regarding NAP Grafana Dashboard can be found on the [**NAP Dashboard**](https://github.com/F5EMEA/oltra/tree/main/use-cases/app-protect/monitoring) lab
+To review the logs login to Grafana and search with the support ID. 
 
 
 ***Clean up the environment (Optional)***
