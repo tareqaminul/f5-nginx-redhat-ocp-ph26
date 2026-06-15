@@ -49,7 +49,6 @@ apiVersion: k8s.nginx.org/v1
 kind: VirtualServer
 metadata:
   name: nap-cafe
-  namespace: nap-vs
 spec:
   host: nap-cafe.f5k8s.net
   policies:
@@ -123,7 +122,7 @@ curl "http://nap-cafe.f5k8s.net:30000/coffee/?user=<script>"
 
 Send a malicious request to a path other than `/tea` or `/coffee`:
 ```
-curl "http://nap-cafe.f5k8s.net/unknown/?user=<script>"
+curl "http://nap-cafe.f5k8s.net:30000/unknown/?user=<script>"
 
 #####################  Expected output  #######################
 <html>
@@ -139,7 +138,7 @@ curl "http://nap-cafe.f5k8s.net/unknown/?user=<script>"
 
 ## Step 7 - Review Logs
 
-To review the logs login to Grafana and search with the support ID. More information regarding NAP Grafana Dashboard can be found on the [**NAP Dashboard**](https://github.com/F5EMEA/oltra/tree/main/use-cases/app-protect/monitoring) lab
+To review the logs login to Grafana and search with the support ID.
 
 ***Clean up the environment (Optional)***
 ```
