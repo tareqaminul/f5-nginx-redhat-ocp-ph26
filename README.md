@@ -13,6 +13,15 @@ The node that is used as jumphost is named ocp-provider, it is used for both CLI
 
 SSH into ocp-provider with login name cloud-user. From there you can run the oc and kubectl tools.
 
+### Switch to user cloud-user
+```sh
+su cloud-user
+```
+### Check context and switch to admin context
+```sh
+oc config get-contexts
+oc config use-context default/api-ocp-f5-udf-com:6443/f5admin
+```
 The first time that you boot the deployment, apply the following procedure until you see that all the nodes are in Ready state:
 
 ```
