@@ -1,4 +1,7 @@
-
+# To Clone This Repo
+```sh
+git clone https://github.com/tareqaminul/f5-nginx-redhat-ocp-ph26.git
+```
 
 This Openshift cluster has 3 masters and 2 workers (masters are scheduleable too). 
 
