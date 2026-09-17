@@ -3,7 +3,7 @@ kind: VirtualServer
 metadata:
   name: webapp
 spec:
-  host: nap-vs2.f5k8s.net
+  host: nap-vs.f5k8s.net
   policies:
   - name: waf-policy-vs
   upstreams:
