@@ -18,21 +18,20 @@ spec:
     # With externalTrafficPolicy: Cluster the node SNATs to an OVN-Kubernetes
     # join-subnet address (100.64.0.0/16 by default) - NOT the BIG-IP self-IP.
     # So either trust both, or use externalTrafficPolicy: Local (see below).
+    # 0.0.0.0/0 for all - not recommended for Production
     - type: CIDR
-      value: 10.1.10.250/32         # <-- BIG-IP self-IP / source of traffic
-    - type: CIDR
-      value: 100.64.0.0/16          # <-- OVN-K join subnet (drop this if you use eTP Local)
+      value: 0.0.0.0/0            # For Lab environment
   kubernetes:
     service:
       type: NodePort                # MUST match CIS args.pool_member_type
-      externalTrafficPolicy: Cluster
+      externalTrafficPolicy: Local
       # Local  = no SNAT (NGINX sees the BIG-IP self-IP, so the /32 above is enough)
       #          but only nodes running a data plane pod answer -> run >= 2 replicas
       # Cluster= all nodes answer, at the cost of SNAT and a possible extra hop
     deployment:
-      replicas: 2
+      replicas: 1     # try 2 or more, for testing BIG-IP Monitors
       container:
         readinessProbe:
-          expose: true              # exposes port 8081 on the Service, with its own nodePort
+          expose: true              # exposes port 8081 on the Service, with its own nodePort, BIG-IP to Monitor
           port: 8081
           path: /nginx-ready
