@@ -1,0 +1,39 @@
+# Declares that BIG-IP fronts the Gateway. NGF turns this into an IngressLink,
+# which F5 CIS compiles into an AS3 declaration.
+apiVersion: gateway.nginx.org/v1alpha1
+kind: ExternalLoadBalancer
+metadata:
+  name: gateway-bigip-link
+  namespace: gatewaylink-demo
+spec:
+  targetRefs:
+  - group: gateway.networking.k8s.io
+    kind: Gateway
+    name: gateway                   # exactly one ExternalLoadBalancer per Gateway
+  gatewayLink:
+    # ---- address: pick ONE of the two (mutually exclusive, one is required) ----
+    ipamLabel: Dev                  # a pool NAME from the IPAM controller's ip_range map
+    # virtualServerAddress: 10.1.10.140   # ... or a static, free IP the BIG-IP can serve
+    # ---------------------------------------------------------------------------
+    partition: ocp                  # must exist on BIG-IP, must not be "Common", immutable
+    iRules:
+    - /Common/Proxy_Protocol_iRule  # full /partition/name path; a bare name is rejected
+
+    # OPTIONAL - reference a monitor that ALREADY EXISTS on BIG-IP.
+    # This field cannot define send/recv; it only points at a device object.
+    # Without it CIS generates a default monitor whose send string is invalid
+    # HTTP/1.1 and whose recv is empty, so any response (even 400) counts as healthy.
+    # monitors:
+    # - name: /Common/ngf_ready_http
+    #   reference: bigip
+
+    # OPTIONAL escape hatch - merged verbatim into the generated IngressLink,
+    # NOT validated by NGF. Use only for IngressLink fields GatewayLink does not model.
+    # The selector is always set by NGF and can never be overridden.
+    # additionalIngressLinkSpec:
+    #   monitors:
+    #   - type: http
+    #     send: "GET /nginx-ready HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n"
+    #     recv: "200"
+    #     interval: 5
+    #     timeout: 16

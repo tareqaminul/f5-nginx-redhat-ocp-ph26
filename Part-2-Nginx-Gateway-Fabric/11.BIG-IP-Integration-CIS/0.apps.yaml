@@ -1,0 +1,36 @@
+# Sample application: two "coffee" pods.
+# OpenShift note: the securityContext block below is what makes this pass the
+# "restricted-v2" Security Context Constraint / restricted Pod Security profile.
+# Without it you get a PodSecurity warning and, in enforcing namespaces, no pods.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: coffee
+  labels: {app: coffee}
+spec:
+  replicas: 2                       # two backends make the BIG-IP pool more interesting
+  selector:
+    matchLabels: {app: coffee}
+  template:
+    metadata:
+      labels: {app: coffee}
+    spec:
+      containers:
+      - name: coffee
+        image: nginxdemos/nginx-hello:plain-text
+        ports: [{containerPort: 8080}]
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities: {drop: ["ALL"]}
+          seccompProfile: {type: RuntimeDefault}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: coffee
+spec:
+  selector: {app: coffee}
+  ports:
+  - name: http
+    port: 80
+    targetPort: 8080

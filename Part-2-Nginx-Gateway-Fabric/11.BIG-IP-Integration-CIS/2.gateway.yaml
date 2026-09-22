@@ -1,0 +1,16 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: gateway
+  namespace: gatewaylink-demo
+spec:
+  gatewayClassName: nginx
+  infrastructure:
+    parametersRef:                  # resolved from the GATEWAY's namespace
+      group: gateway.nginx.org
+      kind: NginxProxy
+      name: gatewaylink-proxy
+  listeners:
+  - name: http
+    port: 80
+    protocol: HTTP

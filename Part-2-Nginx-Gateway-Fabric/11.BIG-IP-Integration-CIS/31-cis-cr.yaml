@@ -1,0 +1,44 @@
+# F5 Container Ingress Services, deployed by the certified operator
+# "F5 Container Ingress Services" (Ecosystem > Software Catalog).
+# The operator watches this resource and renders the CIS Deployment from it.
+#
+# NOTE: the operator's own sample CR is legacy OpenShift Route / SDN mode.
+# Do not use it as-is on OCP 4.12+: OpenShift SDN no longer exists.
+apiVersion: cis.f5.com/v1
+kind: F5BigIpCtlr
+metadata:
+  name: f5-cis
+  namespace: kube-system
+spec:
+  namespace: kube-system            # where the CIS Deployment is created
+  bigip_login_secret: f5-bigip-ctlr-login
+  image:
+    user: registry.connect.redhat.com
+    repo: f5networks/cntr-ingress-svcs
+    pullPolicy: IfNotPresent
+  # The Red Hat registry publishes no version tags for this image, only :latest.
+  # The chart builds "<user>/<repo>:<version>", so appending a digest pins it:
+  # this renders ...:latest@sha256:<digest>, and the digest wins.
+  version: "latest@sha256:fa2b731e725f69a3a1c74faa93a7ff627e7193fe65f955415b399d18f04631c6"  # CIS 2.20.4
+  ingressClass:
+    create: false                   # CRD mode needs none; never become the default controller
+    defaultController: false
+    ingressClassName: ""
+  rbac: {create: true}
+  serviceAccount: {create: true}
+  resources: {}
+  args:
+    bigip_url: "10.1.10.250"        # see README: the mgmt IP may be unreachable FROM PODS
+    bigip_partition: ocp            # must match ExternalLoadBalancer.gatewayLink.partition
+    insecure: true                  # self-signed mgmt cert; required since CIS 2.16
+    log_level: DEBUG
+    log_as3_response: true
+    as3_validation: true
+    disable_teems: true
+    custom_resource_mode: true      # makes CIS watch IngressLink and the other cis.f5.com CRDs
+    pool_member_type: nodeport      # MUST match the data plane Service type
+    ipam: true
+    namespaces: [gatewaylink-demo]  # watch deliberately; add namespaces one by one
+    # Safety on a shared cluster: CIS only touches LoadBalancer Services that opt in
+    load_balancer_class: f5.com/bigip
+    manage_load_balancer_class_only: true

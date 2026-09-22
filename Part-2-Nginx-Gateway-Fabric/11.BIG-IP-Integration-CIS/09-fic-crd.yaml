@@ -1,0 +1,28 @@
+# IPAM CRD for the F5 IPAM Controller (FIC) 0.1.13.
+#
+# Do NOT use docs/_static/schemas/ipam_schema.yaml from the f5-ipam-controller
+# main branch: it has no status subresource (FIC's writes 404), and it declares
+# status.ipStatus while FIC writes status.IPStatus, which the API server prunes
+# silently. FIC then logs "Updated ... with Status" while status stays {}.
+#
+# FIC does not register this CRD itself. Apply it before FIC starts.
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: ipams.fic.f5.com
+spec:
+  group: fic.f5.com
+  scope: Namespaced
+  names: {kind: IPAM, listKind: IPAMList, plural: ipams, singular: ipam}
+  versions:
+  - name: v1
+    served: true
+    storage: true
+    subresources:
+      status: {}                    # FIC writes status through /status
+    schema:
+      openAPIV3Schema:
+        type: object
+        properties:
+          spec:   {type: object, x-kubernetes-preserve-unknown-fields: true}
+          status: {type: object, x-kubernetes-preserve-unknown-fields: true}

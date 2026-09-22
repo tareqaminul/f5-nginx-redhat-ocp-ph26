@@ -1,0 +1,79 @@
+# F5 IPAM Controller 0.1.13 - plain Deployment.
+# There is no FIC operator in the OpenShift catalog (the "egressip-ipam-operator"
+# you may find there is an unrelated Red Hat community operator).
+#
+# Set storageClassName and the ip_range values for your environment.
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: ipam-ctlr, namespace: kube-system}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata: {name: ipam-ctlr-clusterrole}
+rules:
+- apiGroups: ["fic.f5.com"]
+  resources: ["ipams", "ipams/status"]
+  verbs: ["get", "list", "watch", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata: {name: ipam-ctlr-clusterrole-binding}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: ipam-ctlr-clusterrole}
+subjects: [{kind: ServiceAccount, name: ipam-ctlr, namespace: kube-system}]
+---
+# OpenShift: FIC runs as UID 1200, which "restricted-v2" rejects (no pod is
+# created at all - the reason shows on the ReplicaSet, not the Deployment).
+# This RoleBinding is the declarative form of:
+#   oc adm policy add-scc-to-user nonroot-v2 -z ipam-ctlr -n kube-system
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: {name: ipam-ctlr-scc-nonroot-v2, namespace: kube-system}
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: "system:openshift:scc:nonroot-v2"}
+subjects: [{kind: ServiceAccount, name: ipam-ctlr, namespace: kube-system}]
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: {name: ipam-db, namespace: kube-system}
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: openebs-hostpath    # <-- your default StorageClass
+  resources: {requests: {storage: 1Gi}}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: f5-ipam-controller
+  namespace: kube-system
+  labels: {app: f5-ipam-controller}
+spec:
+  replicas: 1                       # SQLite on an RWO volume: never more than 1
+  strategy: {type: Recreate}
+  selector: {matchLabels: {app: f5-ipam-controller}}
+  template:
+    metadata: {labels: {app: f5-ipam-controller}}
+    spec:
+      serviceAccountName: ipam-ctlr
+      securityContext:
+        runAsUser: 1200
+        runAsGroup: 1200
+        fsGroup: 1200
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+      - name: f5-ipam-controller
+        image: docker.io/f5networks/f5-ipam-controller@sha256:c02bc65bbe00c5f0f238bc09714c161dd897c4376bfd1f9164a61563121fa349  # 0.1.13
+        imagePullPolicy: IfNotPresent
+        command: ["/app/bin/f5-ipam-controller"]
+        args:
+        - --orchestration=kubernetes
+        - --ipam-provider=f5-ip-provider
+        # pool name -> range. The pool name is what ExternalLoadBalancer.ipamLabel references.
+        - --ip-range='{"Dev":"10.1.10.101-10.1.10.109","Test":"10.1.10.110-10.1.10.119"}'
+        - --log-level=DEBUG
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities: {drop: ["ALL"]}
+        volumeMounts:
+        - {name: ipam-db, mountPath: /app/ipamdb}
+      volumes:
+      - name: ipam-db
+        persistentVolumeClaim: {claimName: ipam-db}
