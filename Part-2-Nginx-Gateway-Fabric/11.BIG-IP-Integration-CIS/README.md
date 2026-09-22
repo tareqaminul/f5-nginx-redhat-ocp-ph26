@@ -1,59 +1,56 @@
-# Lab 11: GatewayLink — Fronting a Gateway with F5 BIG-IP
+# Lab 11: GatewayLink — Fronting a Gateway with F5 BIG-IP in OpenShift
 
-In many cases, external load balancers, such as, F5 BIG-IP fronts the Kubernetes/OpenShift Clusters. The NGINX Gateway Fabric CRD `ExternalLoadBalancer` declares the
-external load balancer, and F5 Container Ingress Services (CIS) provisions the BIG-IP virtual
-server that fronts the data plane Service — no NodePort exposed to clients, no cloud LoadBalancer.
+External load balancers such as F5 BIG-IP usually sit in front of an OpenShift cluster. The NGINX Gateway Fabric CRD `ExternalLoadBalancer` declares that load balancer from Kubernetes, and F5 Container Ingress Services (CIS) provisions the BIG-IP virtual server that fronts the data plane Service.
 
-By the end of this lab, external clients reach `cafe.example.com/coffee` through a BIG-IP virtual server
-whose pool members are the NGINX data plane pods, with the real client IP preserved end to end, all
-declared from Kubernetes.
+By the end of this lab, external clients reach `cafe.example.com/coffee` through a BIG-IP virtual server whose pool members are the NGINX data plane node ports, with the real client IP preserved end to end, all declared from OpenShift.
 
-![GatewayLink flow: an ExternalLoadBalancer targets a Gateway and an NginxProxy sets the data plane to NodePort with PROXY protocol; NGF emits an IngressLink that F5 CIS compiles into an AS3 declaration, provisioning a BIG-IP virtual server whose pool members are the NGINX data plane Service](image/topology-flow.svg)
+![GatewayLink flow: an ExternalLoadBalancer targets a Gateway and an NginxProxy sets the data plane to NodePort with PROXY protocol; NGF emits an IngressLink that F5 CIS compiles into an AS3 declaration, provisioning a BIG-IP virtual server whose pool members are the data plane node ports](image/topology-flow.svg)
 
-*Blue = Gateway API / NGF resources · Amber = NGINX data plane · Teal = F5 CIS controller · Green = resulting traffic path.*
+*Blue = Gateway API / NGF resources · Amber = NGINX data plane · Teal = F5 controllers · Grey/green = BIG-IP and the resulting traffic path.*
+
+> **Validation note.** Steps and outputs here were run on OpenShift **4.20.13** (OVN-Kubernetes), NGF **2.7.2** (operator 1.5.2), CIS **2.20.4**, FIC **0.1.13**, BIG-IP **17.5.1.3** with AS3 **3.56.0**. Anything not verified there is marked **[unverified]**.
 
 ---
 
 ## Table of contents
 
 - [What you will learn](#what-you-will-learn)
-- [How GatewayLink works in NGINX Gateway Fabric](#how-gatewaylink-works-in-nginx-gateway-fabric)
+- [How GatewayLink works](#how-gatewaylink-works)
 - [Prerequisites](#prerequisites)
-  - [Enable the feature flag in the right order](#-enable-the-feature-flag-in-the-right-order)
-  - [Part A — Prepare the BIG-IP](#part-a--prepare-the-big-ip)
-  - [Part B — Install the F5 IPAM Controller](#part-b--install-the-f5-ipam-controller-optional)
-  - [Part C — Install F5 Container Ingress Services](#part-c--install-f5-container-ingress-services)
-  - [Part D — Enable the NGF flag](#part-d--enable-the-ngf-flag)
-- [Lab environment notes](#lab-environment-notes)
+- [OpenShift-specific facts you need before you start](#openshift-specific-facts-you-need-before-you-start)
+- [Enable the feature flag in the right order](#-enable-the-feature-flag-in-the-right-order)
+- [Part A — Prepare the BIG-IP](#part-a--prepare-the-big-ip)
+- [Part B — Install the F5 IPAM Controller](#part-b--install-the-f5-ipam-controller)
+- [Part C — Install F5 Container Ingress Services](#part-c--install-f5-container-ingress-services)
+- [Part D — Enable the NGF flag](#part-d--enable-the-ngf-flag)
 - [Step 1 — Deploy the sample application](#step-1--deploy-the-sample-application)
 - [Step 2 — Configure the data plane](#step-2--configure-the-data-plane)
 - [Step 3 — Create the Gateway](#step-3--create-the-gateway)
 - [Step 4 — Publish the route](#step-4--publish-the-route)
 - [Step 5 — Declare the ExternalLoadBalancer](#step-5--declare-the-externalloadbalancer)
 - [Step 6 — Verify the BIG-IP virtual server](#step-6--verify-the-big-ip-virtual-server)
-- [Validation rules, confirmed](#validation-rules-confirmed)
+- [Validation rules](#validation-rules)
 - [Troubleshooting](#troubleshooting)
 - [Optional configuration](#optional-configuration)
-- [Going further — multi-cluster load balancing](#going-further--multi-cluster-load-balancing)
+- [Going further](#going-further)
 - [Cleanup](#cleanup)
 
 ---
 
 ## What you will learn
 
-- How NGF delegates external load balancer provisioning instead of implementing it — the division of labor between NGF, CIS, the IPAM controller, and AS3
+- How NGF delegates external load balancer provisioning instead of implementing it: who does what between NGF, CIS, the IPAM controller and AS3
 - Why the `NginxProxy` in this lab is **not optional**, and the two distinct failures you get without it
-- Why `ExternalLoadBalancer` maps strictly one-to-one with a Gateway, and what happens when two target the same one
-- The `virtualServerAddress` vs. `ipamLabel` choice — static addressing vs. delegated IPAM
-- Why `partition` is immutable once set, and why `Common` is rejected
-- How PROXY protocol preserves the client IP across a full-proxy BIG-IP, and why it silently fails when only half of it is configured
+- Why `ExternalLoadBalancer` maps one-to-one with a Gateway
+- The `virtualServerAddress` vs `ipamLabel` choice: static addressing or delegated IPAM
+- How PROXY protocol preserves the client IP across a full-proxy BIG-IP, and why **OVN-Kubernetes SNAT** can still hide it
+- Which OpenShift specifics decide whether this works at all: SCCs, Pod Security, the OVN-K gateway mode, dual-stack pool members, and CRD name collisions with NGINX Ingress Controller
 
 ---
 
-## How GatewayLink works in NGINX Gateway Fabric
+## How GatewayLink works
 
-NGF never talks to BIG-IP. It writes an intermediate resource that F5 CIS already knows how to consume, and
-CIS does the device programming:
+NGF never talks to BIG-IP. It writes an intermediate resource that CIS already knows how to consume, and CIS does the device programming:
 
 ```
   ExternalLoadBalancer      NGF Controller        F5 IPAM        F5 CIS            BIG-IP
@@ -64,37 +61,26 @@ CIS does the device programming:
          |                        |    (named after the DATA        |                  |
          |                        |     PLANE SERVICE)              |                  |
          |                        |-------------------------------->|                  |
-         |                        |                  |             |                  |
-         |                        |   3. allocates address          |                  |
-         |                        |      (only if ipamLabel set)    |                  |
-         |                        |<---------------->|             |                  |
-         |                        |                  |             |                  |
-         |                        |                  |  4. reads node IPs + NodePorts, |
-         |                        |                  |     compiles an AS3 declaration |
+         |                        |                  |  3. CIS requests an address     |
+         |                        |                  |     (only if ipamLabel is set)  |
+         |                        |                  |<----------->|                  |
+         |                        |                  |             |  4. node IPs +   |
+         |                        |                  |             |     NodePorts →  |
+         |                        |                  |             |     AS3 POST     |
          |                        |                  |             |----------------->|
-         |                        |                  |             |  create VS + pool |
-         |                        |                  |             |                  |
-         |  5. Accepted condition on the ExternalLoadBalancer       |                  |
+         |  5. Accepted condition on the ExternalLoadBalancer       |  virtual + pool  |
          |<-----------------------|                  |             |                  |
 ```
 
-Steps 4 repeats whenever endpoints or the IngressLink spec change, which is what keeps the BIG-IP pool in
-sync as data plane pods come and go.
+Step 4 repeats whenever endpoints or the IngressLink spec change, which keeps the pool in sync as pods come and go.
 
-**The IngressLink is named after the data plane Service, not after your `ExternalLoadBalancer`.** A Gateway
-called `gateway` produces a Service called `gateway-nginx`, so the IngressLink is `gateway-nginx` — even
-though the `ExternalLoadBalancer` in this lab is called `gateway-bigip-link`. Every verification command
-below uses the Service-derived name.
+**The IngressLink is named after the data plane Service.** A Gateway called `gateway` produces a Service called `gateway-nginx`, so the IngressLink is `gateway-nginx`, even though the `ExternalLoadBalancer` here is `gateway-bigip-link`. Every verification command below uses the Service-derived name.
 
-**One Gateway yields exactly one data plane Service, so it gets exactly one external load balancer.** If
-two `ExternalLoadBalancer` resources reference the same Gateway, the **oldest is accepted and the rest are
-rejected** with `Accepted=False`, `Reason: Conflicted` — deterministic, not first-writer-wins-at-random,
-which matters when GitOps reapplies resources in arbitrary order.
+**One Gateway, one data plane Service, one external load balancer.** If two `ExternalLoadBalancer` resources reference the same Gateway, the oldest is accepted and the rest get `Accepted=False`, `Reason: Conflicted`. **[unverified]**
 
-**CIS pool members come from the data plane Service, selected by label.** NGF sets the IngressLink's
-`selector` internally and it cannot be overridden — including through `additionalIngressLinkSpec`, the
-escape hatch — because overriding it would sever the link between the virtual server and the Gateway it is
-supposed to front.
+**Pool members come from the data plane Service, selected by label.** NGF sets the IngressLink `selector` internally and it cannot be overridden, not even through `additionalIngressLinkSpec`.
+
+**Note on labels:** CIS normally only processes `cis.f5.com` custom resources labelled `f5cr: "true"`. The IngressLink NGF generates carries **no such label**, and CIS 2.20.4 processes it anyway. Don't add that label by hand and don't expect it in the output.
 
 ---
 
@@ -102,358 +88,278 @@ supposed to front.
 
 | Requirement | Version / notes |
 |---|---|
-| Kubernetes cluster | With network reachability from the cluster to the BIG-IP management interface, and from the BIG-IP to the cluster nodes |
-| NGINX Gateway Fabric | **2.7.0+** — `ExternalLoadBalancer` was introduced in 2.7.0 |
-| F5 BIG-IP | **17.1.0.3 or later**, with admin credentials |
-| BIG-IP AS3 extension | Installed on the device — CIS programs BIG-IP exclusively through AS3 declarations |
-| BIG-IP partition | Must exist before first apply, and must **not** be `Common` |
-| **F5 Container Ingress Services** | **Install this BEFORE enabling the NGF flag** — see the ordering warning |
-| F5 IPAM Controller | **0.1.13** — only needed if you use `ipamLabel` instead of a static address |
-| NGF installed with `nginxGateway.externalLoadBalancer.enable=true` | Off by default. **Do not enable it until the CIS CRDs exist.** |
-| `kubectl`, `helm`, `curl`, `python3` | `python3` only for pretty-printing iControl REST output |
+| OpenShift | 4.19–4.22 for NGF 2.7.x. Verified on 4.20.13, OVN-Kubernetes. |
+| NGINX Gateway Fabric | **2.7.0+** (`ExternalLoadBalancer` arrived in 2.7.0). NGF operator **1.5.x** for 2.7.x. |
+| Gateway API CRDs | Supplied and **owned by OpenShift** (v1.2.1 on 4.20), protected by an admission policy. NGF 2.7.x is compatible with v1.2.1–v1.6.x; newer Gateway API features are simply unavailable. Do not try to upgrade them. |
+| F5 BIG-IP | 17.1.0.3 or later, admin credentials. Verified on 17.5.1.3. |
+| AS3 | Installed on the device. CIS programs BIG-IP exclusively through AS3. Verified with 3.56.0 (the top of the range tested with CIS 2.20.4). |
+| BIG-IP partition | Must exist before the first apply and must **not** be `Common`. |
+| F5 CIS | **Install before enabling the NGF flag.** Certified operator "F5 Container Ingress Services" in Ecosystem ›› Software Catalog. |
+| F5 IPAM Controller | 0.1.13, only if you use `ipamLabel`. **No operator exists**; deploy it as a Deployment. |
+| Tools | `oc`, `curl`, `jq`. BIG-IP work is shown in both the GUI and `tmsh`/iControl REST. |
 
-### ⚠️ Enable the feature flag in the right order
+Command locations: **[oc]** provisioner or workstation with `oc`, **[bigip-sh]** BIG-IP shell, **[bigip-gui]** Configuration Utility, **[ocp-gui]** OpenShift console.
 
-`nginxGateway.externalLoadBalancer.enable=true` makes the NGF **control plane** start a watch on
-`IngressLink.cis.f5.com/v1` — a CRD owned by F5 Container Ingress Services, not by NGF. If that CRD is
-absent, the informer cache never syncs and the controller **terminates after roughly 60 seconds**:
+---
+
+## OpenShift-specific facts you need before you start
+
+These cost the most time if you meet them by surprise.
+
+**1. Check whether BIG-IP can reach pods at all.** CIS can use pod IPs (`cluster` mode, with static routes) or node ports (`nodeport` mode). On OVN-K with `routingViaHost: true` and default (`Restricted`) IP forwarding, the pod-direct path **fails**: the SYN reaches the pod, but the reply never leaves the node. This lab uses **NodePort**, which works either way.
+
+```shell
+oc get network.operator cluster -o jsonpath='{.spec.defaultNetwork.ovnKubernetesConfig.gatewayConfig}{"\n"}'
+```
+
+**2. Check whether pods can reach the BIG-IP management address.** On clusters where nodes have a second NIC on the management subnet, pod egress may be blocked under Restricted forwarding, even though the node itself can connect. `oc debug node` runs on the **host** network, so it passes and hides the problem. Test from a real pod:
+
+```shell
+cat <<'EOF' | oc apply -f -
+apiVersion: v1
+kind: Pod
+metadata: {name: curltest, namespace: default}
+spec:
+  restartPolicy: Never
+  securityContext: {runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
+  containers:
+  - name: c
+    image: registry.access.redhat.com/ubi9/ubi-minimal
+    command: ["curl","-sk","-m5","-o","/dev/null","-w","pod->bigip http=%{http_code}\n","https://<BIGIP_MGMT>/mgmt/shared/appsvcs/info"]
+    securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: ["ALL"]}}
+EOF
+sleep 20; oc logs curltest; oc delete pod curltest
+```
+
+`401` is a pass. `000` means the pod cannot reach it, so point CIS at a **BIG-IP self-IP on the node network** instead, with Port Lockdown set to Allow Custom TCP 443. That is what `args.bigip_url` is set to in `prereq/31-cis-cr.yaml`.
+
+**3. Dual-stack clusters add IPv6 pool members.** On a dual-stack cluster CIS adds each node's IPv6 address as a NodePort pool member too, even without `enable_ipv6`. If the BIG-IP has no IPv6 path, those members are unusable and, without a monitor, they still receive traffic. **Always monitor the pool.**
+
+**4. Pod Security and SCCs.** Sample apps need `allowPrivilegeEscalation: false`, `capabilities.drop: [ALL]` and `seccompProfile: RuntimeDefault` (included in `0.apps.yaml`). FIC runs as UID 1200, which `restricted-v2` rejects, so it needs `nonroot-v2` (included in `prereq/10-fic.yaml`). A rejected pod produces **no pod at all**: look at the ReplicaSet events, not the Deployment.
+
+**5. Resource-name collisions.** If NGINX Ingress Controller is installed, `VirtualServer`, `TransportServer` and `Policy` exist in both `k8s.nginx.org` and `cis.f5.com`. Always use fully qualified names, for example `oc get virtualservers.cis.f5.com`.
+
+**6. CIS scope.** Give CIS an explicit namespace list, and gate LoadBalancer Services with `load_balancer_class` + `manage_load_balancer_class_only: true`. Otherwise CIS processes every classless LoadBalancer Service in the namespaces it watches, which on a shared cluster means other teams' Services.
+
+---
+
+## ⚠️ Enable the feature flag in the right order
+
+`externalLoadBalancer.enable=true` makes the NGF **control plane** watch `IngressLink.cis.f5.com/v1`, a CRD owned by CIS. If that CRD is absent, the informer never syncs and the controller terminates after roughly 60 seconds: **[unverified on this build; behaviour reported on NGF 2.7.0]**
 
 ```
 failed to start control loop: failed to wait for provisioner-IngressLink caches to sync
-kind source: *unstructured.Unstructured[cis.f5.com/v1 IngressLink]:
-timed out waiting for cache to be synced
+kind source: *unstructured.Unstructured[cis.f5.com/v1 IngressLink]: timed out waiting for cache to be synced
 ```
 
-The pod then enters `CrashLoopBackOff` and restarts indefinitely.
+A crashing control plane stops reconciling **every** Gateway in the cluster. Existing data planes keep serving, but no new config is pushed and no status is updated.
 
-This is **not** scoped to this lab. A crashing control plane stops reconciling *every* Gateway in the
-cluster — unrelated Gateways keep serving traffic from their existing data plane config, but no new config
-is pushed and no status is updated. Enabling this flag speculatively, "to have it ready", takes out the
-whole control plane on any cluster without CIS.
-
-**Correct order: A → B → C → D below.** Work through them in order; each is collapsed, expand as you go.
+**Correct order: A → B → C → D.**
 
 ---
 
-<details>
-<summary><b>Part A — Prepare the BIG-IP</b> (AS3, partition, PROXY protocol iRule)</summary>
+## Part A — Prepare the BIG-IP
 
-<br>
+**A0. Base setup, if the device is new.** Two traps seen on 17.5:
+- The VLAN interface must be **Untagged** for a flat lab network; tagged means no ARP replies at all. The GUI won't change tagging while a self-IP uses the VLAN, so delete the self-IP, then the VLAN, then recreate both. Also check the interface is **Enabled**.
+- Create the CIS user (Administrator, all partitions, no terminal), then **log in once as that user**. BIG-IP 17.5 forces a password change on first login, and until you do, remote REST calls return `401 Password expired` while local calls on the device succeed.
 
-Set the connection details once. Everything in Parts A–C uses them.
-
-```shell
-export BIGIP_ADDRESS="192.0.2.10:443"          # <-- your BIG-IP management address:port
-export BIGIP_USERNAME="admin"
-export BIGIP_PASSWORD="<your-password>"
-export BIGIP_PARTITION="k8s"
-export IPAM_ADDRESS_RANGE="192.0.2.100-192.0.2.110"   # only needed for Part B
-```
-
-> Exporting a password puts it in your shell history. In a shared or recorded lab environment, read it
-> with `read -rs BIGIP_PASSWORD` instead.
-
-**A1. Install the AS3 extension.** CIS configures BIG-IP *only* through AS3 declarations, so without it
-nothing this lab does reaches the device. Follow F5's documentation to download and install the AS3 RPM.
-
-Confirm it is serving — a 404 here is the single most common cause of a `CrashLoopBackOff` in CIS later:
+Set connection details once. **[oc]**
 
 ```shell
-curl -sku "$BIGIP_USERNAME:$BIGIP_PASSWORD" \
-  "https://$BIGIP_ADDRESS/mgmt/shared/appsvcs/info" | python3 -m json.tool
+export BIGIP_ADDRESS="10.1.1.5"           # management address
+export BIGIP_USERNAME="cis-admin"
+read -rs BIGIP_PASSWORD; export BIGIP_PASSWORD
+export BIGIP_PARTITION="ocp"
 ```
 
-```
-{
-    "version": "3.52.0",
-    "release": "5",
-    "schemaCurrent": "3.52.0",
-    "schemaMinimum": "3.0.0"
-}
-```
+**A1. Install AS3.** A fresh BIG-IP has no automation toolchain, and iApps ›› Package Management LX only lists packages that are already installed. Download the RPM from the F5 `f5-appsvcs-extension` releases, then import it in the GUI. If the **Import** button is missing, enable uploads once on the device: **[bigip-sh]** `touch /var/config/rest/iapps/enable`.
 
-**A2. Create the partition.** CIS owns everything inside it, so give it a dedicated one — this is what
-makes the integration safely reversible. `Common` is rejected by the CRD precisely to stop CIS from taking
-ownership of shared device configuration.
+Confirm AS3 answers **as the CIS user**:
 
 ```shell
-curl -sku "$BIGIP_USERNAME:$BIGIP_PASSWORD" -X POST \
-  "https://$BIGIP_ADDRESS/mgmt/tm/auth/partition" \
-  -H "Content-Type: application/json" \
-  -d "{\"name\": \"$BIGIP_PARTITION\"}"
+curl -sku "$BIGIP_USERNAME:$BIGIP_PASSWORD" "https://$BIGIP_ADDRESS/mgmt/shared/appsvcs/info" | jq .
 ```
 
-Verify:
+```
+{"version":"3.56.0","release":"10","schemaCurrent":"3.56.0","schemaMinimum":"3.0.0"}
+```
+
+**A2. Create the partition.** CIS owns everything inside it, which is what makes the integration reversible. `Common` is rejected by the CRD for that reason.
 
 ```shell
-curl -sku "$BIGIP_USERNAME:$BIGIP_PASSWORD" \
-  "https://$BIGIP_ADDRESS/mgmt/tm/auth/partition" | grep -o "\"name\":\"[^\"]*\""
+curl -sku "$BIGIP_USERNAME:$BIGIP_PASSWORD" -X POST "https://$BIGIP_ADDRESS/mgmt/tm/auth/partition" \
+  -H "Content-Type: application/json" -d "{\"name\": \"$BIGIP_PARTITION\"}"
 ```
 
-**A3. Create the PROXY protocol iRule.** BIG-IP is a full proxy — it opens its own TCP connection to
-NGINX, so by default NGINX sees the BIG-IP self-IP as the client for every single request. This iRule
-prepends a PROXY protocol v1 header carrying the original client address:
+**A3. Create the PROXY protocol iRule.** BIG-IP is a full proxy, so by default NGINX sees the BIG-IP self-IP as the client. `prereq/Proxy_Protocol_iRule.tcl` holds the verified version. Create it in `/Common`, either in the GUI (Local Traffic ›› iRules ›› Create) or with `tmsh`:
 
 ```shell
-curl -sku "$BIGIP_USERNAME:$BIGIP_PASSWORD" -X POST "https://$BIGIP_ADDRESS/mgmt/tm/ltm/rule" \
-  -H "Content-Type: application/json" -d '{
-    "name": "Proxy_Protocol_iRule",
-    "apiAnonymous": "when SERVER_CONNECTED {\n  TCP::respond \"PROXY TCP[IP::version] [IP::client_addr] [clientside {IP::local_addr}] [TCP::client_port] [clientside {TCP::local_port}]\\r\\n\"\n}"
-  }'
+# [bigip-sh]
+tmsh create ltm rule Proxy_Protocol_iRule
+# paste the contents of prereq/Proxy_Protocol_iRule.tcl, then:
+tmsh save sys config
+tmsh list ltm rule /Common/Proxy_Protocol_iRule
 ```
 
-Verify it exists:
-
-```shell
-curl -sku "$BIGIP_USERNAME:$BIGIP_PASSWORD" \
-  "https://$BIGIP_ADDRESS/mgmt/tm/ltm/rule/~Common~Proxy_Protocol_iRule" | python3 -m json.tool | head -5
-```
-
-> **This is only half of the setup.** The matching `rewriteClientIP` block in `1.nginxproxy.yaml` is the
-> other half. Configure either one alone and there is **no error anywhere** — requests succeed, and the
-> access log quietly shows an internal address. See the troubleshooting table.
-
-</details>
-
-<details>
-<summary><b>Part B — Install the F5 IPAM Controller</b> (optional — only for <code>ipamLabel</code>)</summary>
-
-<br>
-
-Skip this entirely if you are using a static `virtualServerAddress`, which is what
-`4.externalloadbalancer.yaml` does by default. Install it when you want a pool of addresses allocated on
-demand instead of an IP hardcoded in a manifest.
-
-**B1. Install the IPAM CRD:**
-
-```shell
-kubectl apply -f - <<'EOF'
-apiVersion: apiextensions.k8s.io/v1
-kind: CustomResourceDefinition
-metadata:
-  name: ipams.fic.f5.com
-spec:
-  group: fic.f5.com
-  names:
-    kind: IPAM
-    listKind: IPAMList
-    plural: ipams
-    singular: ipam
-  scope: Namespaced
-  versions:
-    - name: v1
-      served: true
-      storage: true
-      subresources:
-        status: {}
-      schema:
-        openAPIV3Schema:
-          type: object
-          x-kubernetes-preserve-unknown-fields: true
-          properties:
-            spec:
-              type: object
-              x-kubernetes-preserve-unknown-fields: true
-            status:
-              type: object
-              x-kubernetes-preserve-unknown-fields: true
-EOF
-```
-
-**B2. Install the controller.** The key setting is `args.ip_range`, a map of **pool name → address range**.
-The pool name on the left is what an `ExternalLoadBalancer` later references as `ipamLabel`:
-
-```shell
-helm repo add f5-ipam-stable https://f5networks.github.io/f5-ipam-controller/helm-charts/stable --force-update
-helm repo update
-
-helm install f5-ipam-controller f5-ipam-stable/f5-ipam-controller \
-  --namespace kube-system \
-  --set image.version=0.1.13 \
-  --set namespace=kube-system \
-  --set rbac.create=true \
-  --set serviceAccount.create=true \
-  --set args.log_level=DEBUG \
-  --set pvc.create=true \
-  --set pvc.storage=100Mi \
-  --set-string 'args.ip_range=\{"production":"'"$IPAM_ADDRESS_RANGE"'"\}' \
-  --wait
-```
-
-> The `--set-string` value is genuinely awkward: the braces are escaped so Helm treats the JSON map as a
-> string rather than parsing it as a list, and the quoting alternates so `$IPAM_ADDRESS_RANGE` still
-> expands. Copy it as-is and change only the variable.
-
-**B3. Verify** the pool registered — this is the value you must match with `ipamLabel`:
-
-```shell
-kubectl logs -n kube-system -l app=f5-ipam-controller --tail=20 | grep -i "ip_range\|provider"
-```
-
-`pvc.create=true` matters: the controller persists its allocations, so a restart does not hand out an
-address that is already in use.
-
-</details>
-
-<details>
-<summary><b>Part C — Install F5 Container Ingress Services</b> (this creates the <code>IngressLink</code> CRD)</summary>
-
-<br>
-
-**C1. Install the CIS custom resource definitions first.** This step is what creates
-`ingresslinks.cis.f5.com` — the CRD NGF's watch depends on, and therefore the gate on Part D:
-
-```shell
-kubectl apply -f https://raw.githubusercontent.com/F5Networks/k8s-bigip-ctlr/master/docs/config_examples/customResourceDefinitions/incubator/customresourcedefinitions.yml
-```
-
-Confirm — do not continue until this returns a row:
-
-```shell
-kubectl get crd ingresslinks.cis.f5.com
-```
-
-```
-NAME                        CREATED AT
-ingresslinks.cis.f5.com     2026-09-06T11:02:44Z
-```
-
-**C2. Install the controller:**
-
-```shell
-helm repo add f5-stable https://f5networks.github.io/charts/stable
-helm repo update
-
-helm install f5-cis f5-stable/f5-bigip-ctlr -n kube-system \
-  --set bigip_secret.create=true \
-  --set bigip_secret.username="$BIGIP_USERNAME" \
-  --set bigip_secret.password="$BIGIP_PASSWORD" \
-  --set rbac.create=true \
-  --set serviceAccount.create=true \
-  --set namespace=kube-system \
-  --set args.bigip_url="$BIGIP_ADDRESS" \
-  --set args.bigip_partition="$BIGIP_PARTITION" \
-  --set args.pool_member_type=nodeport \
-  --set args.custom_resource_mode=true \
-  --set args.insecure=true \
-  --set args.log_level=DEBUG \
-  --set args.log-as3-response=true \
-  --set args.ipam=true
-```
-
-Three of those arguments decide whether this lab works at all:
-
-| Argument | Why it matters here |
-|---|---|
-| `args.pool_member_type=nodeport` | Pool members are built from node IP + nodePort. This is why `1.nginxproxy.yaml` sets the data plane Service to `NodePort`. **Mismatch these two and the BIG-IP pool comes out empty.** |
-| `args.custom_resource_mode=true` | Makes CIS watch `IngressLink` and the other `cis.f5.com` CRDs. Without it CIS runs in Ingress mode and ignores everything NGF emits. |
-| `args.ipam=true` | Required only for `ipamLabel`. Harmless when using a static address. |
-
-`args.insecure=true` skips verification of the BIG-IP's management certificate. Fine for a lab; replace it
-with a trusted CA bundle anywhere else.
-
-**C3. Verify CIS reached the device.** A successful `authn/login` is the check that credentials, address,
-and reachability are all correct:
-
-```shell
-kubectl logs -n kube-system deploy/f5-cis-f5-bigip-ctlr | grep -E "authn/login|AS3"
-kubectl get pods -n kube-system -l app=f5-cis-f5-bigip-ctlr
-```
-
-If the pod is in `CrashLoopBackOff` with `[ERROR] AS3 RPM is not installed on BIGIP`, revisit step A1 —
-CIS returns this on a 404 from the AS3 endpoint. Restart the pod after fixing it:
-
-```shell
-kubectl delete pod -n kube-system -l app=f5-cis-f5-bigip-ctlr
-```
-
-</details>
-
-<details>
-<summary><b>Part D — Enable the NGF flag</b> (only after Part C succeeds)</summary>
-
-<br>
-
-**D1. Re-confirm the gate.** This must return a row before you go any further:
-
-```shell
-kubectl get crd ingresslinks.cis.f5.com
-kubectl get pods -n kube-system -l app=f5-cis-f5-bigip-ctlr
-```
-
-**D2. Enable the flag:**
-
-```shell
-helm upgrade ngf oci://ghcr.io/nginx/charts/nginx-gateway-fabric \
-  --version 2.7.0 --reuse-values \
-  --set nginxGateway.externalLoadBalancer.enable=true \
-  -n nginx-gateway --wait
-```
-
-**D3. Confirm the flag actually rendered.** Helm silently ignores values a chart does not define, so a
-chart older than 2.7.0 renders a Deployment with no flag and no error:
-
-```shell
-kubectl get deploy -n nginx-gateway ngf-nginx-gateway-fabric \
-  -o jsonpath='{.spec.template.spec.containers[?(@.name=="nginx-gateway")].args}' | tr ',' '\n'
-```
-
-You should see `--external-load-balancer` in the list.
-
-**D4. Confirm the control plane is stable — and wait.** `--wait` returns as soon as the pod is `Ready`,
-but the cache-sync failure takes about 60 seconds. A pod reading `Running` immediately after the upgrade
-proves nothing. Watch the restart count for two full minutes:
-
-```shell
-kubectl get pods -n nginx-gateway -w \
-  -o custom-columns='NAME:.metadata.name,READY:.status.containerStatuses[0].ready,RESTARTS:.status.containerStatuses[0].restartCount'
-```
-
-```
-NAME                                       READY   RESTARTS
-ngf-nginx-gateway-fabric-cf68b7fcb-xlx8h   true    0
-```
-
-`RESTARTS` climbing off `0` means the watch failed — roll straight back:
-
-```shell
-helm upgrade ngf oci://ghcr.io/nginx/charts/nginx-gateway-fabric \
-  --version 2.7.0 --reuse-values \
-  --set nginxGateway.externalLoadBalancer.enable=false \
-  -n nginx-gateway --wait
-```
-
-</details>
+> **This is only half the setup.** The `rewriteClientIP` block in `1.nginxproxy.yaml` is the other half. With only one side configured there is **no error anywhere**: requests succeed and the access log quietly shows an internal address.
 
 ---
 
-## Lab environment notes
+## Part B — Install the F5 IPAM Controller
 
-Replace both placeholders in `4.externalloadbalancer.yaml` before applying. They are deliberately written
-so the CRD **rejects them** rather than letting a half-configured resource through:
+Skip this if you use a static `virtualServerAddress`.
 
-| Placeholder | Notes |
+**B1. Plan and prove the address range.** Sweep the candidates from the BIG-IP and check ARP, not just ping, so hosts that drop ICMP are still found:
+
+```shell
+# [bigip-sh]
+for i in $(seq 101 119); do ping -c1 -W1 10.1.10.$i >/dev/null && echo "IN USE 10.1.10.$i"; done
+tmsh show net arp | grep -v incomplete
+```
+
+**B2. Apply the CRD and the controller.** There is no FIC operator, so this is a plain Deployment. Edit `storageClassName` and `--ip-range` first.
+
+```shell
+oc apply -f prereq/09-fic-crd.yaml
+oc apply -f prereq/10-fic.yaml
+oc -n kube-system rollout status deploy/f5-ipam-controller
+```
+
+**B3. Verify.** The `Added Label` lines are the pool names that `ipamLabel` must match:
+
+```shell
+oc -n kube-system logs deploy/f5-ipam-controller | grep -E "Version|Added Label|Provider Initialised|Caches are synced"
+oc -n kube-system logs deploy/f5-ipam-controller | grep reflector.go | tail -2      # must be empty
+```
+
+```
+[INIT] Starting: F5 IPAM Controller - Version: 0.1.13
+[DEBUG] Added Label: Dev
+[DEBUG] Added Label: Test
+[DEBUG] [PROV] Provider Initialised
+Caches are synced for F5 IPAMClient Controller
+```
+
+`Failed to watch *v1.IPAM` means the CRD is missing. The PVC stays `Pending` until the pod is scheduled if your StorageClass is `WaitForFirstConsumer`; that's expected.
+
+---
+
+## Part C — Install F5 Container Ingress Services
+
+**C1. Install the CIS CRDs.** The operator does **not** install them: its chart has no `crds/` directory, and its bundle owns only `F5BigIpCtlr`. Pin the branch rather than tracking `master`:
+
+```shell
+oc apply -f https://raw.githubusercontent.com/F5Networks/k8s-bigip-ctlr/2.20-stable/docs/config_examples/customResourceDefinitions/customresourcedefinitions.yml
+oc get crd ingresslinks.cis.f5.com
+```
+
+```
+NAME                      CREATED AT
+ingresslinks.cis.f5.com   2026-09-19T18:41:30Z
+```
+
+**C2. Install the operator. [ocp-gui]** Ecosystem ›› Software Catalog ›› **F5 Container Ingress Services** ›› Install: channel `stable`, installed namespace `openshift-operators`, **Update approval: Manual**. Approve the install plan, and wait for **Succeeded**.
+
+**C3. Credentials and the CIS instance.**
+
+```shell
+oc -n kube-system create secret generic f5-bigip-ctlr-login \
+  --from-literal=username="$BIGIP_USERNAME" --from-literal=password="$BIGIP_PASSWORD"
+# edit bigip_url / partition / namespaces / digest first
+oc apply -f prereq/31-cis-cr.yaml
+oc -n kube-system rollout status deploy/f5-cis-f5-bigip-ctlr
+```
+
+Three arguments decide whether this lab works at all:
+
+| Argument | Why |
 |---|---|
-| `<BIGIP_VIRTUAL_SERVER_IP>` | A free IP the BIG-IP can serve. Delete this line and uncomment `ipamLabel` instead if the IPAM controller from Part B should allocate it. |
-| `<BIGIP_PARTITION>` | Must already exist on the BIG-IP (Part A2) **and match the `args.bigip_partition` CIS was installed with** (Part C2). `Common` is rejected by the CRD. |
+| `pool_member_type: nodeport` | Pool members are node IP + nodePort. This is why `1.nginxproxy.yaml` sets the Service to NodePort. Mismatch the two and the pool comes out empty. |
+| `custom_resource_mode: true` | Makes CIS watch `IngressLink` and the other `cis.f5.com` CRDs. Without it CIS ignores everything NGF emits. **Also note:** this mode is mutually exclusive with `controller-mode=openshift` (native Route support), and IPAM requires this mode. One CIS instance cannot do both; run a second instance with its own partition for Routes. |
+| `ipam: true` | Required for `ipamLabel`; harmless with a static address. |
 
-One setting in `1.nginxproxy.yaml` is safe for a lab and wrong for production: `trustedAddresses` is
-`0.0.0.0/0`, which trusts a PROXY protocol header from any source — a client-IP spoofing path. Narrow it to
-the subnet the BIG-IP sends traffic from.
+**C4. Verify.** Check what the operator actually rendered, not just what you wrote:
+
+```shell
+oc -n kube-system get deploy/f5-cis-f5-bigip-ctlr -o jsonpath='{.spec.template.spec.containers[0].image}{"\n"}'
+oc -n kube-system get deploy/f5-cis-f5-bigip-ctlr -o jsonpath='{.spec.template.spec.containers[0].args}' | tr ',' '\n'
+oc -n kube-system logs deploy/f5-cis-f5-bigip-ctlr | grep -E "Starting: Container Ingress Services|appsvcs|\[(ERROR|WARNING)\]" | head
+```
+
+Expect `Version: v2.20.4`, the AS3 version echoed back from the device, and `Created IPAM Custom Resource` if IPAM is on.
+
+If the pod is Running but the probes report `connection refused`, CIS is stuck in startup: the health endpoint only opens once the BIG-IP login and AS3 check succeed. Read the log; the probe failure is a symptom, not the cause.
+
+---
+
+## Part D — Enable the NGF flag
+
+**D1. Re-confirm the gate:**
+
+```shell
+oc get crd ingresslinks.cis.f5.com
+oc -n kube-system get pods -l app=f5-bigip-ctlr
+```
+
+**D2. Enable it.** With the NGF operator, the flag lives in the `NginxGatewayFabric` resource:
+
+```shell
+NGFNS=nginx-gateway
+NGFCR=$(oc -n $NGFNS get nginxgatewayfabric -o name | head -1)
+oc -n $NGFNS patch $NGFCR --type=merge -p '{"spec":{"nginxGateway":{"externalLoadBalancer":{"enable":true}}}}'
+```
+
+**D3. Confirm the flag rendered.** Values a chart doesn't define are ignored silently, so a chart older than 2.7.0 renders no flag and no error:
+
+```shell
+oc -n $NGFNS get deploy -l app.kubernetes.io/name=nginx-gateway-fabric \
+  -o jsonpath='{.items[0].spec.template.spec.containers[0].args}' | tr ',' '\n' | grep -i external
+```
+
+```
+"--external-load-balancer"
+```
+
+**D4. Confirm the control plane is stable.** Watch the restart count for two minutes; the cache-sync failure takes about 60 seconds, so "Running" straight after the change proves nothing.
+
+```shell
+oc -n $NGFNS get pods -w -o custom-columns='NAME:.metadata.name,READY:.status.containerStatuses[0].ready,RESTARTS:.status.containerStatuses[0].restartCount'
+```
+
+If restarts climb, set `enable: false` again and go back to Part C.
+
+<details>
+<summary><b>Upgrading NGF 2.6.x → 2.7.x on OpenShift (three traps)</b></summary>
+
+<br>
+
+1. **New CRDs are not installed on upgrade.** The operator is Helm-based, and Helm only applies a chart's `crds/` on first install. `ExternalLoadBalancer` and `PayloadProcessor` would simply never appear. Extract the CRDs from the new operator image and apply them **before** approving the upgrade:
+
+   ```shell
+   OPIMG=<operator image from the packagemanifest relatedImages>
+   rm -rf /tmp/ngf-op && mkdir -p /tmp/ngf-op
+   oc image extract --filter-by-os=linux/amd64 "$OPIMG" --path /opt/helm/:/tmp/ngf-op --confirm
+   grep -E '^(version|appVersion)' /tmp/ngf-op/helm-charts/nginx-gateway-fabric/Chart.yaml
+   oc apply --server-side --force-conflicts -f /tmp/ngf-op/config/crd/bases/
+   ```
+
+2. **OLM may offer no upgrade path.** If the Subscription reports `AtLatestKnown` while the catalog lists only a newer CSV, there is no upgrade edge. Delete the Subscription **and** the CSV, then re-subscribe with `startingCSV` set to the new version. The NGF deployments, CRDs and the `NginxGatewayFabric` resource survive, because the CSV doesn't own them. **Never delete the `NginxGatewayFabric` resource**: its finalizer uninstalls NGF.
+
+3. **Per-Gateway pinned images must be bumped with it.** A Gateway whose own `NginxProxy` pins an nginx image tag keeps that tag, while the new control plane renders its own init container and WAF sidecar versions. The mismatch crash-loops the data plane. Bump those tags in the same change.
+
+Also worth knowing: the operator's default memory limit may be too small (128Mi against ~120Mi in use), which shows up as exit 137, lease-renewal timeouts and dozens of restarts. Raise it through the Subscription's `spec.config.resources`.
+
+</details>
 
 ---
 
 ## Step 1 — Deploy the sample application
 
 ```shell
-cd ~/NGINX-Gateway-Fabric-Lab/labs/labs-on-test/lab.t.2.gatewaylink-bigip
-kubectl apply -f 0.apps.yaml
-```
-
-**Verify** — two replicas `Running` (two pool members makes the BIG-IP pool more interesting):
-
-```shell
-kubectl get pods -l app=coffee
+oc new-project gatewaylink-demo
+oc apply -f 0.apps.yaml
+oc get pods -l app=coffee
 ```
 
 ```
@@ -462,72 +368,52 @@ coffee-654ddf664b-9zx2q   1/1     Running   0          6s
 coffee-654ddf664b-lm4tv   1/1     Running   0          6s
 ```
 
+Make sure the namespace isn't enrolled in a service mesh, which would intercept this traffic:
+
+```shell
+oc get ns gatewaylink-demo --show-labels    # no istio.io/dataplane-mode, no istio-injection
+```
+
 ---
 
 ## Step 2 — Configure the data plane
 
-This is the step most easily skipped, and skipping it produces a virtual server that exists but does not
-work. `1.nginxproxy.yaml` sets three things the BIG-IP integration depends on: a `NodePort` Service (so CIS
-can build pool members), an exposed readiness probe (so CIS can health check them), and PROXY protocol
-client IP rewriting (so the real client address survives the full proxy).
+Skipping this produces a virtual server that exists but doesn't work. `1.nginxproxy.yaml` sets a NodePort Service (pool members), an exposed readiness probe (health checks) and PROXY protocol rewriting (real client IP).
 
 ```shell
-kubectl apply -f 1.nginxproxy.yaml
+oc apply -f 1.nginxproxy.yaml
+oc -n gatewaylink-demo get nginxproxy gatewaylink-proxy
 ```
 
-**Verify**:
+Nothing takes effect until a Gateway references it, which is the next step.
 
-```shell
-kubectl get nginxproxy gatewaylink-proxy
-```
-
-```
-NAME                AGE
-gatewaylink-proxy   2s
-```
-
-Nothing takes effect yet — an `NginxProxy` does nothing until a Gateway references it, which is the next
-step.
+**About `trustedAddresses`:** NGINX validates the PROXY header against the address the connection comes **from**. With `externalTrafficPolicy: Cluster`, OpenShift SNATs node-port traffic to an OVN-K **join-subnet** address (100.64.0.0/16 by default), not the BIG-IP self-IP. So either trust both (as shipped), or switch to `externalTrafficPolicy: Local` and trust only the BIG-IP `/32`. With `Local`, run at least two replicas, because only nodes hosting a data plane pod answer.
 
 ---
 
 ## Step 3 — Create the Gateway
 
 ```shell
-kubectl apply -f 2.gateway.yaml
+oc apply -f 2.gateway.yaml
+oc -n gatewaylink-demo get gateway gateway
+oc -n gatewaylink-demo get svc gateway-nginx
 ```
 
-**Verify** the Gateway is programmed **and** that the `NginxProxy` was actually applied — the Service type
-is the observable proof that `parametersRef` resolved:
+```
+NAME      CLASS   ADDRESS         PROGRAMMED   AGE
+gateway   nginx   192.168.1.30    True         18s
+
+NAME            TYPE       CLUSTER-IP     EXTERNAL-IP   PORT(S)                       AGE
+gateway-nginx   NodePort   192.168.1.30   <none>        80:31207/TCP,8081:30322/TCP   18s
+```
+
+Two things to check: `TYPE` must be `NodePort` (`ClusterIP` means the `parametersRef` didn't resolve, usually a name typo or the `NginxProxy` in another namespace), and the readiness port 8081 must have its own node port, which is what a proper health monitor targets.
+
+Confirm the PROXY protocol side landed in the generated config:
 
 ```shell
-kubectl get gateway gateway
-kubectl get svc gateway-nginx
-```
-
-```
-NAME      CLASS   ADDRESS          PROGRAMMED   AGE
-gateway   nginx   10.104.194.212   True         18s
-
-NAME            TYPE       CLUSTER-IP       EXTERNAL-IP   PORT(S)        AGE
-gateway-nginx   NodePort   10.104.194.212   <none>        80:31274/TCP   18s
-```
-
-> `TYPE` showing `ClusterIP` instead of `NodePort` means the `parametersRef` did not resolve — most often a
-> name typo, or the `NginxProxy` sitting in a different namespace from the Gateway. Fix it before
-> continuing; CIS would otherwise build an empty pool.
-
-Confirm the PROXY protocol side landed in the generated config too:
-
-```shell
-POD=$(kubectl get pod -l gateway.networking.k8s.io/gateway-name=gateway -o name | head -1)
-kubectl exec ${POD#pod/} -c nginx -- grep -E "set_real_ip_from|proxy_protocol" /etc/nginx/conf.d/http.conf
-```
-
-```
-set_real_ip_from 0.0.0.0/0;
-real_ip_header proxy_protocol;
-listen 80 proxy_protocol default_server;
+POD=$(oc -n gatewaylink-demo get pod -l gateway.networking.k8s.io/gateway-name=gateway -o name | head -1)
+oc -n gatewaylink-demo exec ${POD#pod/} -c nginx -- grep -E "set_real_ip_from|proxy_protocol" /etc/nginx/conf.d/http.conf
 ```
 
 ---
@@ -535,178 +421,137 @@ listen 80 proxy_protocol default_server;
 ## Step 4 — Publish the route
 
 ```shell
-kubectl apply -f 3.routes.yaml
-```
-
-**Verify**:
-
-```shell
-kubectl get httproute coffee
-```
-
-```
-NAME     HOSTNAMES              AGE
-coffee   ["cafe.example.com"]   3s
+oc apply -f 3.routes.yaml
+oc -n gatewaylink-demo get httproute coffee
 ```
 
 ---
 
 ## Step 5 — Declare the ExternalLoadBalancer
 
-```shell
-kubectl apply -f 4.externalloadbalancer.yaml
-```
-
-**Verify** — accepted. Note that the status is nested under `Controllers`, one entry per controller that
-processed the resource, not a bare `Conditions` list:
+Edit `4.externalloadbalancer.yaml` first: `ipamLabel` must match a pool name from Part B (or swap in `virtualServerAddress`), and `partition` must match the CIS partition.
 
 ```shell
-kubectl describe externalloadbalancer gateway-bigip-link
+oc apply -f 4.externalloadbalancer.yaml
+oc -n gatewaylink-demo get externalloadbalancers.gateway.nginx.org gateway-bigip-link -o json | jq '.status'
 ```
 
-```
-Name:         gateway-bigip-link
-Namespace:    default
-API Version:  gateway.nginx.org/v1alpha1
-Kind:         ExternalLoadBalancer
-Spec:
-  Gateway Link:
-    Host:        cafe.example.com
-    I Rules:
-      /Common/Proxy_Protocol_iRule
-    Partition:               k8s
-    Virtual Server Address:  10.10.20.55
-    Virtual Server Name:     ngf-gateway-vs
-  Target Refs:
-    Group:  gateway.networking.k8s.io
-    Kind:   Gateway
-    Name:   gateway
-Status:
-  Controllers:
-    Controller Name:  gateway.nginx.org/nginx-gateway-controller
-    Conditions:
-      Last Transition Time:  2026-09-06T11:14:03Z
-      Message:               ExternalLoadBalancer is accepted
-      Observed Generation:   1
-      Reason:                Accepted
-      Status:                True
-      Type:                  Accepted
-Events:                      <none>
+```json
+{"controllers":[{"conditions":[{"message":"The ExternalLoadBalancer is accepted","reason":"Accepted","status":"True","type":"Accepted"}],
+  "controllerName":"gateway.nginx.org/nginx-gateway-controller"}]}
 ```
 
-> `Reason: Conflicted` instead means another `ExternalLoadBalancer` already targets this Gateway. The
-> oldest wins; delete it before this one is accepted. `Reason: Invalid` means the resource passed CEL
-> validation but failed a check NGF performs itself — the message names the field.
+The status is nested under `controllers`, one entry per controller, not a bare `conditions` list.
 
-**Then confirm NGF emitted the IngressLink** — remember it is named after the data plane Service:
+**Then confirm NGF emitted the IngressLink**, named after the data plane Service:
 
 ```shell
-kubectl get ingresslink gateway-nginx
-kubectl get ingresslink gateway-nginx -o jsonpath='{.spec}' | python3 -m json.tool
+oc -n gatewaylink-demo get ingresslinks.cis.f5.com \
+  -o custom-columns='NAME:.metadata.name,LABEL:.spec.ipamLabel,PARTITION:.spec.partition,ADDRESS:.status.vsAddress,STATUS:.status.status'
 ```
 
-An IngressLink with **no `status`** has not been processed by CIS yet. Give it up to two minutes before
-digging into logs — this is expected, not a failure.
+```
+NAME            LABEL   PARTITION   ADDRESS       STATUS
+gateway-nginx   Dev     ocp         10.1.10.102   OK
+```
 
-If you used `ipamLabel`, this is where the address appears:
+An IngressLink with **no status** hasn't been processed by CIS yet. Give it two minutes before digging into logs.
+
+Check both halves of the IPAM handshake: CIS files the request in `spec.hostSpecs`, FIC answers in `status.IPStatus`, through the `/status` subresource:
 
 ```shell
-export ALLOCATED_ADDRESS=$(kubectl get ingresslink gateway-nginx -o jsonpath='{.status.vsAddress}')
-echo "$ALLOCATED_ADDRESS"
+./verify.sh
 ```
+
+```
+== IPAM: requests (CIS) vs allocations (FIC)
+KEY                          LABEL  IP
+gatewaylink-demo/gateway-nginx_il   Dev    10.1.10.102
+
+== Writers on the IPAM resource
+{"manager":"k8s-bigip-ctlr","subresource":null}
+{"manager":"f5-ipam-controller","subresource":"status"}
+```
+
+If `status` stays empty while FIC logs "Updated … with Status", the IPAM CRD is wrong; see `prereq/09-fic-crd.yaml`.
 
 ---
 
 ## Step 6 — Verify the BIG-IP virtual server
 
-Confirm CIS pushed a declaration and BIG-IP accepted it:
+**[bigip-sh]** Objects live under `/<partition>/Shared/…`:
 
 ```shell
-kubectl logs -n kube-system deploy/f5-cis-f5-bigip-ctlr --tail=50 | grep -E "AS3\]\[POST\]|response:"
+tmsh -c "cd /ocp; list ltm virtual recursive one-line" | grep -oE 'ltm virtual [^ ]+|destination [^ ]+|rules \{[^}]*\}'
+tmsh -c "cd /ocp; show ltm pool recursive members field-fmt" | grep -E 'ltm pool|addr|port|availability-state'
 ```
 
-List what actually exists on the device — the virtual server should be in your partition, not `Common`:
+```
+ltm virtual Shared/ingress_link_crd_10_1_10_102_80
+destination 10.1.10.102:http
+rules { /Common/Proxy_Protocol_iRule }
+
+ltm pool Shared/gw_link_nginx_80_ngf_test
+  addr 10.1.10.6 … 10.1.10.10  port 31207   available
+  addr fdbd:…::6 … ::10        port 31207   offline      <- dual-stack: expected, monitored down
+```
+
+No `rules` on the virtual means the iRule wasn't attached and client IPs will be wrong. A path pointing at a non-existent iRule is accepted by the CRD but fails at the device.
+
+**Reach the application through the VIP:**
 
 ```shell
-curl -sku "$BIGIP_USERNAME:$BIGIP_PASSWORD" "https://$BIGIP_ADDRESS/mgmt/tm/ltm/virtual" \
-  | python3 -c 'import sys,json
-for v in json.load(sys.stdin)["items"]:
-    print(v["fullPath"], "->", v.get("rules", "no rules"))'
+VIP=$(oc -n gatewaylink-demo get ingresslinks.cis.f5.com gateway-nginx -o jsonpath='{.status.vsAddress}')
+curl -i --resolve cafe.example.com:80:$VIP http://cafe.example.com/coffee
+for i in $(seq 1 10); do curl -s --resolve cafe.example.com:80:$VIP http://cafe.example.com/coffee | grep "Server name"; done | sort | uniq -c
 ```
 
-```
-/k8s/Shared/ngf-gateway-vs -> ['/Common/Proxy_Protocol_iRule']
-```
-
-> No `rules` on the virtual server means the iRule was not attached, and client IPs will be wrong. Check
-> the `iRules` entry in `4.externalloadbalancer.yaml` uses the full `/partition/name` path — a bare name is
-> rejected by the CRD, but a path pointing at a non-existent iRule is accepted here and fails at the device.
-
-Now reach the application through the BIG-IP VIP rather than a NodePort:
+**Verify the client IP survived:**
 
 ```shell
-curl -i --resolve cafe.example.com:80:<BIGIP_VIRTUAL_SERVER_IP> \
-  http://cafe.example.com/coffee
+POD=$(oc -n gatewaylink-demo get pod -l gateway.networking.k8s.io/gateway-name=gateway -o name | head -1)
+oc -n gatewaylink-demo logs ${POD#pod/} -c nginx | grep coffee | tail -1
 ```
 
-```
-HTTP/1.1 200 OK
-Server: nginx
-Date: Sun, 06 Sep 2026 11:22:41 GMT
-Content-Type: text/plain
-Content-Length: 162
-Connection: keep-alive
+The leading address should be **your workstation's IP**. A `100.64.x.x` address means the PROXY header was discarded because the SNAT source isn't trusted; see Step 2.
 
-Server address: 10.0.156.109:8080
-Server name: coffee-654ddf664b-9zx2q
-Date: 06/Sep/2026:11:22:41 +0000
-URI: /coffee
-Request ID: 4c8e2a19f7b03d6e5a1c9048f2b7e36d
-```
-
-**Verify load distribution** — repeated requests should reach both data plane pods, which in turn reach
-both coffee pods:
+**Confirm the node port is not a client entry point:**
 
 ```shell
-for i in $(seq 1 10); do
-  curl -s --resolve cafe.example.com:80:<BIGIP_VIRTUAL_SERVER_IP> \
-    http://cafe.example.com/coffee | grep "Server name"
-done | sort | uniq -c
+NP=$(oc -n gatewaylink-demo get svc gateway-nginx -o jsonpath='{.spec.ports[0].nodePort}')
+curl -s -m5 -o /dev/null -w 'direct nodeport: %{http_code}\n' -H 'Host: cafe.example.com' http://<any-node-ip>:$NP/coffee
 ```
 
-**Verify the client IP survived** — this is the payoff for Part A3 plus `1.nginxproxy.yaml`, and the one
-check that proves both halves of the PROXY protocol setup are in place:
+`000` is the expected result: the listener requires a PROXY header, so only the BIG-IP can talk to it. Node ports exist in this mode, but they aren't usable by clients.
 
-```shell
-POD=$(kubectl get pod -l gateway.networking.k8s.io/gateway-name=gateway -o name | head -1)
-kubectl logs ${POD#pod/} -c nginx | grep coffee | tail -1
-```
-
-The leading address should be **your workstation's IP**, not a BIG-IP self-IP or a node address. If it is
-an internal address, see the troubleshooting table — the request still succeeded, so nothing else will tell
-you this is broken.
+**A caveat on health monitoring.** CIS generates a default monitor whose send string is `GET /nginx-ready HTTP/1.1\r\n` with no `Host` header and no terminating blank line, and with an empty receive string. NGINX answers `400`, and BIG-IP counts that as healthy. So the default monitor proves the node port answers, not that NGINX is ready. Either reference a properly defined BIG-IP monitor through `gatewayLink.monitors`, or override it through `additionalIngressLinkSpec` (both shown in `4.externalloadbalancer.yaml`).
 
 ---
 
-## Validation rules, confirmed
+## Validation rules
 
-Every rule below was triggered against a live NGF 2.7.0 cluster and the message captured verbatim, so you
-can match what you see exactly:
+**Confirmed here:**
+
+| What you do | What you get |
+|---|---|
+| Give `monitors` an inline definition (`type`/`send`/`recv`) | `spec.gatewayLink.monitors[0].name: Required value` and `…reference: Required value`. The field references an existing BIG-IP monitor; it cannot define one. |
+| Point `partition` at the CIS partition | Accepted, and the virtual lands in `/<partition>/Shared/` |
+
+**Reported by the CRD's validation rules [unverified here]:**
 
 | What you do | What the API server returns |
 |---|---|
-| Leave `<BIGIP_VIRTUAL_SERVER_IP>` unreplaced | `spec.gatewayLink.virtualServerAddress: Invalid value: "<BIGIP_VIRTUAL_SERVER_IP>": ... should match '^(([0-9]\|[1-9][0-9]\|...` |
-| Set `partition: Common` | `spec.gatewayLink: Invalid value: "object": partition cannot be Common` |
-| Set both `virtualServerAddress` and `ipamLabel` | `spec.gatewayLink: Invalid value: "object": virtualServerAddress and ipamLabel are mutually exclusive` |
-| Set neither | `spec.gatewayLink: Invalid value: "object": one of virtualServerAddress or ipamLabel must be set` |
-| Use a bare iRule name (`Proxy_Protocol_iRule`) | `spec.gatewayLink.iRules[0]: Invalid value: "Proxy_Protocol_iRule": ... should match '^\/[a-zA-Z]+...` |
-| Change `partition` on an existing resource | `partition cannot be modified; delete the resource and recreate it with the new partition` |
+| Leave `<BIGIP_VIRTUAL_SERVER_IP>` unreplaced | `spec.gatewayLink.virtualServerAddress: Invalid value … should match '^(([0-9]…` |
+| `partition: Common` | `partition cannot be Common` |
+| Both `virtualServerAddress` and `ipamLabel` | `virtualServerAddress and ipamLabel are mutually exclusive` |
+| Neither | `one of virtualServerAddress or ipamLabel must be set` |
+| A bare iRule name | `Invalid value: "Proxy_Protocol_iRule" … should match '^\/[a-zA-Z]+…` |
+| Change `partition` in place | `partition cannot be modified; delete the resource and recreate it` |
 
-Try them yourself without touching anything real — server-side dry run validates against the live CRDs but
-writes nothing:
+Try them without touching anything real:
 
 ```shell
-kubectl apply --dry-run=server -f 4.externalloadbalancer.yaml
+oc apply --dry-run=server -f 4.externalloadbalancer.yaml
 ```
 
 ---
@@ -715,30 +560,34 @@ kubectl apply --dry-run=server -f 4.externalloadbalancer.yaml
 
 | Symptom | Cause | Resolution |
 |---|---|---|
-| **NGF control plane in `CrashLoopBackOff`; logs end with `failed to wait for provisioner-IngressLink caches to sync`** | **`externalLoadBalancer.enable=true` while the `IngressLink` CRD is absent — CIS not installed** | **Install CIS first (Part C), or disable the flag: `helm upgrade ngf ... --reuse-values --set nginxGateway.externalLoadBalancer.enable=false`. Confirmed on NGF 2.7.0.** |
-| Control plane looked healthy, then started restarting ~1 min later | Same as above — the cache-sync timeout is not immediate | Check `restartCount`, not just `Running`, when validating this flag |
-| **No IngressLink is created at all** | The `--external-load-balancer` flag never rendered — Helm ignores values a chart does not define, so an older chart produces no flag and no error | `kubectl get deploy -n nginx-gateway ngf-nginx-gateway-fabric -o jsonpath='{.spec.template.spec.containers[?(@.name=="nginx-gateway")].args}'` |
-| IngressLink exists but has **no `status`** | CIS writes that field; absent means not yet processed | Wait up to two minutes, then `kubectl logs -n kube-system deploy/f5-cis-f5-bigip-ctlr` |
-| Looking for an IngressLink named after the `ExternalLoadBalancer` | It is named after the **data plane Service** | `kubectl get ingresslink gateway-nginx`, not `gateway-bigip-link` |
-| **The BIG-IP pool is empty** | Service type does not match the CIS `pool_member_type`, or the listener is not programmed | `kubectl get svc gateway-nginx -o jsonpath='{.spec.type}{"\n"}{.spec.ports}'` — must be `NodePort` for `pool_member_type=nodeport`. Also `kubectl describe gateway gateway`: an HTTPS listener with a missing or invalid `certificateRefs` Secret stays unprogrammed, so its port is never exposed on the Service |
-| **NGINX logs show an internal address as the client** | Only one half of the PROXY protocol setup is in place, or the header source is untrusted. NGINX checks the trust list against **both** the connection address and the address inside the header, and **discards the header silently** if either fails | Confirm the iRule is attached to the virtual server (Step 6), then `kubectl exec $POD -c nginx -- grep set_real_ip_from /etc/nginx/conf.d/http.conf` and widen/correct `trustedAddresses` in `1.nginxproxy.yaml` |
-| **No address allocated** with `ipamLabel` | CIS missing `args.ipam=true`, or the label does not match a pool name | `kubectl logs -n kube-system -l app=f5-ipam-controller --tail=20` — a mismatch reads `[PROV] IPAM LABEL: <label> Not Found`. The label must equal a key in the controller's `ip_range` map |
-| **AS3 declaration rejected** | Partition missing, or a referenced BIG-IP object (iRule, SSL profile, monitor) does not exist | `kubectl logs -n kube-system deploy/f5-cis-f5-bigip-ctlr \| grep -E "AS3\]\[POST\]\|response:"` — the BIG-IP response names the offending object |
-| CIS pod `CrashLoopBackOff`, logs `[ERROR] AS3 RPM is not installed on BIGIP` | AS3 not installed or not serving (404) | Install AS3 (Part A1), then `kubectl delete pod -n kube-system -l app=f5-cis-f5-bigip-ctlr` |
-| **A field you set has no effect and no error** | Kubernetes silently drops fields absent from the CRD schema — a CIS CRD older than the NGF release will not have the newer IngressLink fields | `kubectl get crd ingresslinks.cis.f5.com -o yaml \| grep -A5 <field>`, then `kubectl logs -n nginx-gateway deploy/ngf-nginx-gateway-fabric \| grep "unknown field"`. Also inspect what NGF actually wrote: `kubectl get ingresslink gateway-nginx -o jsonpath='{.spec}' \| python3 -m json.tool` |
-| `ExternalLoadBalancer` status `Conflicted` | Another one already targets this Gateway | Delete the older resource; oldest-wins is deterministic |
-| Rejected on update: "partition cannot be modified" | Changed `partition` in place | Delete and recreate the resource |
-| Data plane Service is `ClusterIP` despite `1.nginxproxy.yaml` | `parametersRef` did not resolve — wrong name, or `NginxProxy` in a different namespace from the Gateway | The `NginxProxy` is resolved from the **Gateway's own namespace**. `kubectl describe gateway gateway` and check the conditions |
-| VIP answers but returns 502 | Pool members unhealthy or wrong Service targeted | `kubectl get endpointslices -l kubernetes.io/service-name=gateway-nginx`, and check the readiness probe is exposed |
+| NGF control plane crash-loops, `failed to wait for provisioner-IngressLink caches to sync` | The flag is on but the `IngressLink` CRD is absent | Install CIS (Part C) or set `externalLoadBalancer.enable: false` |
+| Control plane fine, then restarts about a minute later | The cache-sync timeout isn't immediate | Watch `restartCount`, not just `Running` |
+| No IngressLink at all | `--external-load-balancer` never rendered (chart older than 2.7.0), or CIS doesn't watch that namespace | Check the rendered args (D3) and CIS's `--namespace=` list |
+| IngressLink exists, no `status` | CIS hasn't processed it yet | Wait 2 minutes, then read the CIS log |
+| Looking for an IngressLink named after the ExternalLoadBalancer | It's named after the **data plane Service** | `oc get ingresslinks.cis.f5.com gateway-nginx` |
+| BIG-IP pool empty | Service type doesn't match `pool_member_type`, or the listener isn't programmed | `oc get svc gateway-nginx -o jsonpath='{.spec.type}'` must be `NodePort` |
+| Pool has twice the members, half offline | Dual-stack nodes; the IPv6 members have no BIG-IP path | Expected. Keep a monitor on every pool. |
+| NGINX logs a `100.64.x.x` client | OVN-K SNAT with `externalTrafficPolicy: Cluster`; the header source isn't trusted, and NGINX discards the header silently | Trust the join subnet, or switch to `Local` with ≥2 replicas |
+| NGINX logs the BIG-IP self-IP | Only one half of the PROXY setup is in place | Check the iRule is attached (Step 6) and `set_real_ip_from` is in the config |
+| CIS pod Running, probes refused, restarts | Startup blocked on the BIG-IP login or AS3 | Read the CIS log: timeouts to the mgmt IP mean pods can't reach it; use the self-IP |
+| CIS `[ERROR] AS3 RPM is not installed on BIGIP` | AS3 missing or returning 404 | Part A1, then restart the CIS pod |
+| No address with `ipamLabel` | Label doesn't match a pool name, or `ipam: true` missing | Compare with the FIC `Added Label` lines |
+| FIC logs "Updated … with Status" but `status` stays `{}` | Wrong IPAM CRD: no status subresource, or `ipStatus` vs `IPStatus` pruning | Use `prereq/09-fic-crd.yaml`; restart FIC, then CIS |
+| FIC has no pod at all | UID 1200 rejected by `restricted-v2` | The `nonroot-v2` RoleBinding in `prereq/10-fic.yaml`; check ReplicaSet events |
+| IPAM resource missing entirely | CIS creates it at startup, and only if the CRD exists | Order: CRD → FIC → CIS; after any CRD change restart FIC, then CIS |
+| `oc get vs` shows unexpected objects | NIC defines the same kinds | Use `virtualservers.cis.f5.com` |
+| A field you set has no effect and no error | The API server prunes fields absent from the CRD schema | Compare the CRD schema with what NGF wrote into the IngressLink |
+| Data plane Service is `ClusterIP` despite the NginxProxy | `parametersRef` didn't resolve | It resolves from the **Gateway's** namespace; check name and namespace |
+| VIP answers but returns 502 | Pool members unhealthy, or the wrong Service is targeted | Check endpoints and the exposed readiness port |
 
 Useful commands:
 
 ```shell
-kubectl get externalloadbalancer -o wide
-kubectl get ingresslink -A
-kubectl logs -n nginx-gateway deploy/ngf-nginx-gateway-fabric -c nginx-gateway --tail=50
-kubectl logs -n kube-system deploy/f5-cis-f5-bigip-ctlr --tail=50
-kubectl logs -n kube-system -l app=f5-ipam-controller --tail=50
+oc get externalloadbalancers.gateway.nginx.org -A
+oc get ingresslinks.cis.f5.com -A
+oc -n nginx-gateway logs deploy/<ngf-control-plane> --tail=50
+oc -n kube-system logs deploy/f5-cis-f5-bigip-ctlr --tail=50 | grep -v reflector.go
+oc -n kube-system logs deploy/f5-ipam-controller --tail=50 | grep -v reflector.go
 ```
 
 ---
@@ -749,173 +598,72 @@ Fields on `spec.gatewayLink` beyond what this lab uses:
 
 | Field | Purpose |
 |---|---|
-| `ipamLabel` | Delegate IP allocation to the F5 IPAM Controller instead of a static address. Must match a pool name in the controller's `ip_range` map |
-| `virtualServerName` | Custom BIG-IP virtual server name instead of a generated one |
+| `ipamLabel` | Delegate IP allocation to FIC. Must match a pool name in `ip_range`. |
+| `virtualServerName` | Custom BIG-IP virtual server name |
 | `host` | Hostname for the virtual server |
-| `partition` | BIG-IP partition; must exist, cannot be `Common`, **immutable after creation** |
-| `bigipRouteDomain` | Route domain ID (0–65535) for the virtual server |
-| `iRules` | BIG-IP iRules to attach, each as a full `/partition/name` path |
-| `monitors` | Health monitors for the pool — `{name: /Common/http, reference: bigip}`. `reference` currently only accepts `bigip` |
-| `tls.reference` | Where SSL profiles come from: `bigip` (already on the device, the default) or `secret` (Kubernetes `kubernetes.io/tls` Secrets) |
-| `tls.clientSSLs` | Profiles BIG-IP uses to **terminate** client TLS |
-| `tls.serverSSLs` | Profiles BIG-IP uses to **re-encrypt** to NGINX |
-| `serviceAddress.icmpEcho` | Whether the VIP answers ping — `enable`, `disable`, or `selective` (follows virtual server state) |
-| `serviceAddress.trafficGroup` | BIG-IP traffic group owning the VIP, e.g. `/Common/traffic-group-1` — this is what controls failover in an HA pair |
-| `multiCluster` | Load balance across NGINX instances in several clusters — see below |
-| `additionalIngressLinkSpec` | **Escape hatch.** Merged verbatim into the generated IngressLink, bypassing schema validation, defaulting, and CEL rules entirely. Modeled fields above take precedence over it, and the `selector` can never be overridden. Use only for IngressLink fields GatewayLink does not model yet |
+| `partition` | Must exist, cannot be `Common`, immutable after creation |
+| `bigipRouteDomain` | Route domain ID (0–65535) |
+| `iRules` | Full `/partition/name` paths |
+| `monitors` | `{name: /Common/http, reference: bigip}`. References only; `reference` accepts `bigip`. |
+| `tls.reference` | `bigip` (profiles on the device) or `secret` (Kubernetes TLS Secrets) |
+| `tls.clientSSLs` / `tls.serverSSLs` | Terminate client TLS / re-encrypt to NGINX |
+| `serviceAddress.icmpEcho` | Whether the VIP answers ping |
+| `serviceAddress.trafficGroup` | Traffic group owning the VIP; this is what controls failover in an HA pair |
+| `multiCluster` | Pool members from several clusters |
+| `additionalIngressLinkSpec` | Escape hatch, merged verbatim, unvalidated. Modeled fields win; the selector can never be overridden. |
 
 ---
 
-## Going further — multi-cluster load balancing
+## Going further
 
-<details>
-<summary><b>One BIG-IP fronting Gateways in two clusters</b> (outline — a lab in its own right)</summary>
-
-<br>
-
-`multiCluster` lets a single BIG-IP virtual server pool members from **several** clusters, each running its
-own NGF and Gateway. Only the cluster running CIS sets `multiCluster`; the others just run NGF with a
-matching Gateway and Service, and CIS reaches them over a kubeconfig.
-
-The shape of it:
-
-1. **In cluster B (remote):** create a ServiceAccount with a ClusterRole granting read on `nodes`,
-   `services`, `endpoints`, `namespaces`, `pods`, `secrets`, `configmaps`, plus `discovery.k8s.io/endpointslices`
-   and full access to `cis.f5.com`. Mint a long-lived token and build a kubeconfig from it.
-2. **In cluster A (local, runs CIS):** store that kubeconfig as a Secret, and point CIS at it through an
-   "extended spec" ConfigMap listing the remote clusters:
-
-   ```yaml
-   apiVersion: v1
-   kind: ConfigMap
-   metadata:
-     name: extended-spec-config
-     namespace: kube-system
-     labels:
-       f5nr: "true"
-   data:
-     extendedSpec: |
-       mode: default
-       externalClustersConfig:
-       - clusterName: remote
-         secret: kube-system/remote-kubeconfig
-   ```
-
-   Then install CIS with `--set args.multi-cluster-mode=standalone`,
-   `--set args.local-cluster-name=local`, and
-   `--set args.extended-spec-configmap=kube-system/extended-spec-config`.
-3. **In both clusters:** install NGF, apply the same `NginxProxy` / Gateway / app / HTTPRoute. Note the
-   multicluster guide uses `externalTrafficPolicy: Local` rather than `Cluster`.
-4. **In cluster A only:** one `ExternalLoadBalancer` describing the whole thing:
-
-   ```yaml
-   gatewayLink:
-     virtualServerAddress: "192.0.2.100"
-     partition: k8s
-     host: cafe.example.com
-     tls:
-       reference: bigip
-       clientSSLs:
-         - /Common/clientssl
-       serverSSLs:
-         - /Common/serverssl
-     monitors:
-       - name: /Common/http
-         reference: bigip
-     multiCluster:
-       localClusterName: local        # MUST match CIS's --local-cluster-name
-       remoteClusters:
-         - clusterName: remote        # MUST match a name in the extended spec
-   ```
-
-Two constraints that are easy to get wrong: `localClusterName` must equal the CIS `--local-cluster-name`
-flag or CIS cannot resolve the local Service, and each `remoteClusters[].clusterName` must match a
-`clusterName` in the extended-spec ConfigMap. Each remote entry defaults its `namespace` and `service` to
-the **local** Gateway's, so the remote cluster's Gateway must be named identically unless you override
-them. `weight` (0–256) shifts the split between clusters.
-
-Full walkthrough, including the TLS termination and re-encryption setup:
-[GatewayLink multi-cluster guide](https://github.com/nginx/documentation/blob/main/content/ngf/external-loadbalancers/gateway-link/multicluster.md).
-
-</details>
+- **Swap the static address for `ipamLabel`**, so no manifest carries a hardcoded IP.
+- **A real readiness monitor**: reference a `/Common` monitor whose send string is valid HTTP/1.1 and whose receive string requires `200`.
+- **`externalTrafficPolicy: Local` with 2+ replicas**: no SNAT, a tight `/32` trust, and a visible failover test.
+- **BIG-IP TLS offload** in front of NGF via `tls.clientSSLs` / `tls.serverSSLs`.
+- **WAF behind GatewayLink**: attach a `WAFPolicy` to the Gateway and confirm WAF events carry the real client IP.
+- **Multi-cluster**: one BIG-IP pooling members from two clusters, each running its own NGF. `localClusterName` must equal CIS's `--local-cluster-name`, and each `remoteClusters[].clusterName` must match the extended-spec ConfigMap. **[unverified]**
+- **Compare with IngressLink for NGINX Ingress Controller**: the same CIS resource, but you write it and maintain its selector by hand.
 
 ---
 
 ## Cleanup
 
-Delete the `ExternalLoadBalancer` **first** and confirm CIS removed the virtual server before deleting the
-Gateway — otherwise a stale VIP can be left configured on the BIG-IP, and with the Gateway gone there is no
-longer a resource whose deletion would clean it up.
+Delete the `ExternalLoadBalancer` **first** and let CIS remove the virtual server. With the Gateway gone first, there's no resource left whose deletion would clean up the device.
 
 ```shell
-kubectl delete -f 4.externalloadbalancer.yaml
+./cleanup.sh
 ```
 
-Confirm the device is clean — the virtual server in your partition should be gone:
+**[bigip-sh]** Confirm the device is clean:
 
 ```shell
-curl -sku "$BIGIP_USERNAME:$BIGIP_PASSWORD" "https://$BIGIP_ADDRESS/mgmt/tm/ltm/virtual" \
-  | python3 -m json.tool | grep fullPath
+tmsh -c "cd /ocp; list ltm virtual recursive one-line" | grep -o 'ltm virtual [^ ]*'
 ```
 
-Then the rest:
+To remove the supporting infrastructure too:
 
 ```shell
-kubectl delete -f 3.routes.yaml
-kubectl delete -f 2.gateway.yaml
-kubectl delete -f 1.nginxproxy.yaml
-kubectl delete -f 0.apps.yaml
+oc delete -f prereq/31-cis-cr.yaml          # the operator removes the CIS Deployment
+oc delete -f prereq/10-fic.yaml
 ```
 
-To remove the supporting infrastructure as well:
-
-```shell
-helm uninstall f5-cis -n kube-system
-helm uninstall f5-ipam-controller -n kube-system
-```
-
-Leave the NGF flag enabled only if CIS stays installed. If you uninstall CIS, **disable the flag first** —
-deleting the `IngressLink` CRD out from under a running NGF control plane reproduces the crash loop from
-the prerequisites:
-
-```shell
-helm upgrade ngf oci://ghcr.io/nginx/charts/nginx-gateway-fabric \
-  --version 2.7.0 --reuse-values \
-  --set nginxGateway.externalLoadBalancer.enable=false \
-  -n nginx-gateway --wait
-```
+Leave the NGF flag on only if CIS stays installed. If you uninstall CIS, **disable the flag first**; deleting the `IngressLink` CRD under a running control plane reproduces the crash loop from Part D.
 
 ---
 
-## Learn More
+## Learn more
 
-Most Kubernetes gateways stop at the cluster edge and leave "how does traffic actually arrive" to a cloud
-LoadBalancer or a NodePort plus something external. `ExternalLoadBalancer` closes that gap declaratively for
-on-prem F5 estates: the BIG-IP VIP becomes part of the same manifest set as the Gateway and HTTPRoute, so a
-Git revert reverts the whole path rather than just the in-cluster half. The `partition` immutability rule
-and the un-overridable selector are both deliberate guardrails on that — the CRD is designed so a
-misconfiguration is rejected at apply time rather than silently reassigning device ownership.
-
-Other directions worth exploring:
-
-- **IPAM-driven addressing** — swap `virtualServerAddress` for `ipamLabel` (Part B) and let the controller allocate from a pool, so no manifest carries a hardcoded IP.
-- **BIG-IP TLS offload in front of NGF** — use `tls.clientSSLs` / `tls.serverSSLs` to terminate at the BIG-IP and re-encrypt to the Gateway, versus passing through and terminating at NGINX (lab 4 / lab T10).
-- **Multi-cluster** — see the section above; the most genuinely differentiated capability here.
-- **Multi-partition tenancy** — one partition per environment or business unit, with `partition` immutability as the guardrail against accidental cross-tenant moves.
-- **HA and failover** — set `serviceAddress.trafficGroup` and fail the BIG-IP pair over while traffic runs.
-- **Failover testing in-cluster** — drain a data plane pod and watch CIS update the pool members.
-- **Comparing to cloud LoadBalancer Services** — run the same Gateway both ways and diff what each provisions.
-
----
+Most Kubernetes gateways stop at the cluster edge and leave "how does traffic actually arrive" to a cloud LoadBalancer or a node port plus something external. `ExternalLoadBalancer` closes that gap declaratively for on-prem F5 estates: the BIG-IP VIP becomes part of the same manifest set as the Gateway and HTTPRoute, so a Git revert reverts the whole path rather than just the in-cluster half. On OpenShift it also fits the platform's own patterns: certified operators for the controllers, SCCs for the workloads, and no changes to the Gateway API CRDs the cluster owns.
 
 ## References
 
-- [GatewayLink quickstart](https://docs.nginx.com/nginx-gateway-fabric/external-loadbalancers/gateway-link/quickstart/) ([source](https://github.com/nginx/documentation/blob/main/content/ngf/external-loadbalancers/gateway-link/quickstart.md))
-- [GatewayLink multi-cluster guide](https://github.com/nginx/documentation/blob/main/content/ngf/external-loadbalancers/gateway-link/multicluster.md)
+- [GatewayLink quickstart](https://docs.nginx.com/nginx-gateway-fabric/external-loadbalancers/gateway-link/quickstart/)
+- [NGF technical specifications (OpenShift compatibility)](https://docs.nginx.com/nginx-gateway-fabric/overview/technical-specifications/)
 - [NGF 2.7.0 release notes](https://github.com/nginx/nginx-gateway-fabric/releases/tag/v2.7.0)
-- [F5 CIS IngressLink CRD definitions](https://github.com/F5Networks/k8s-bigip-ctlr/blob/master/docs/config_examples/customResourceDefinitions/customresourcedefinitions.yml)
-- [NGINX Gateway Fabric API reference](https://docs.nginx.com/nginx-gateway-fabric/reference/api/)
+- [F5 CIS CRDs (2.20-stable)](https://github.com/F5Networks/k8s-bigip-ctlr/blob/2.20-stable/docs/config_examples/customResourceDefinitions/customresourcedefinitions.yml)
+- [F5 CIS configuration parameters](https://clouddocs.f5.com/containers/latest/userguide/config-parameters.html)
+- [NGF API reference](https://docs.nginx.com/nginx-gateway-fabric/reference/api/)
 
 ---
 
-> **Support:** the code in this repository is community supported and is not supported by F5, Inc. For a complete list of supported projects please reference `SUPPORT.md`.
+> **Support:** the code in this repository is community supported and is not supported by F5, Inc. See `SUPPORT.md`.
